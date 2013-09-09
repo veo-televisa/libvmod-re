@@ -1,0 +1,37 @@
+varnishtest "cached compiled regexen"
+
+# run two clients, to test caching of compiled regexen
+server s1 {
+	rxreq
+	txresp -hdr "Foo: barbaz" -hdr "Bar: bazquux" -body "1111\n"
+	rxreq
+	txresp -hdr "Foo: barbaz" -hdr "Bar: bazquux" -body "1111\n"
+} -start
+
+varnish v1 -vcl+backend {
+	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
+
+	sub vcl_fetch {
+		if (re.match(beresp.http.foo, "(bar)(baz)")) {
+			set beresp.http.foo1 = re.backref(1, "error1");
+			set beresp.http.foo2 = re.backref(2, "error2");
+		} else {
+			error 999;
+		}
+	}
+
+} -start
+
+client c1 {
+	txreq
+	rxresp
+	expect resp.http.foo1 == "bar"
+	expect resp.http.foo2 == "baz"
+} -run
+
+client c2 {
+	txreq -url /foo
+	rxresp
+	expect resp.http.foo1 == "bar"
+	expect resp.http.foo2 == "baz"
+} -run

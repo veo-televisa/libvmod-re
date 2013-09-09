@@ -1,0 +1,22 @@
+varnishtest "strings over 256 bytes (== varnish r00896.vtc)"
+
+server s1 {
+	rxreq 
+	txresp
+} -start
+
+varnish v1 -vcl+backend {
+	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
+
+	sub vcl_recv {
+	    if (re.match(req.http.host, "^(abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij)")) {
+		error 500 "not ok";
+		}
+	}
+} -start 
+
+client c1 {
+	txreq  
+	rxresp
+	expect resp.status == 200
+} -run

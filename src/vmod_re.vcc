@@ -1,0 +1,5 @@
+Module re
+Init re_init
+Function BOOL match(PRIV_VCL, PRIV_CALL, STRING, STRING)
+Function STRING backref(PRIV_VCL, INT, STRING)
+Function STRING version()

@@ -1,0 +1,29 @@
+varnishtest "non-capturing parentheses"
+
+server s1 {
+	rxreq
+	txresp -hdr "Foo: barbaz" -body "1111\n"
+} -start
+
+varnish v1 -vcl+backend {
+	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
+
+	sub vcl_fetch {
+		if (re.match(beresp.http.foo, "(?:bar)(baz)")) {
+			set beresp.http.foo0 = re.backref(0, "error0");
+			set beresp.http.foo1 = re.backref(1, "error1");
+			set beresp.http.foo2 = re.backref(2, "fallback");
+		} else {
+			error 999;
+		}
+	}
+
+} -start
+
+client c1 {
+	txreq
+	rxresp
+	expect resp.http.foo0 == "barbaz"
+	expect resp.http.foo1 == "baz"
+	expect resp.http.foo2 == "fallback"
+} -run

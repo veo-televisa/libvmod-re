@@ -1,0 +1,28 @@
+varnishtest "test null match (varnish r00913.vtc)"
+
+server s1 {
+	rxreq
+	expect req.url == "/bar"
+	txresp -body "foobar"
+} -start
+
+varnish v1 -vcl+backend {
+	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
+
+	sub vcl_fetch {
+		if (re.match(beresp.http.bar, "$")) {
+			set beresp.http.foo = "XXX";
+		}
+		if (re.match(beresp.http.foo, "")) {
+			set beresp.http.bar = "YYY";
+		}
+	}
+} -start
+
+client c1 {
+	txreq  -url /bar -hdr "Foo: bar"
+	rxresp 
+	expect resp.http.content-length == 6
+	expect resp.http.foo == "XXX"
+	expect resp.http.bar == "YYY"
+} -run
