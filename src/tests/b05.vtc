@@ -1,8 +1,8 @@
-varnishtest "regex compilation failre"
+varnishtest "regex compilation failure"
 
 server s1 {
 	rxreq
-	txresp -hdr "Foo: bar" -body "foobar"
+	txresp -hdr "Foo: bar" -hdr "Baz: quux" -body "foobar"
 } -start
 
 varnish v1 -vcl+backend {
@@ -12,6 +12,9 @@ varnish v1 -vcl+backend {
 		if (re.match(beresp.http.foo, "(")) {
 			set beresp.http.foo = "baz";
 		}
+		if (re.match_dyn(beresp.http.baz, "(")) {
+			set beresp.http.baz = "waldo";
+		}
 	}
 } -start
 
@@ -20,4 +23,5 @@ client c1 {
 	rxresp 
 	expect resp.http.content-length == 6
 	expect resp.http.foo == "bar"
+	expect resp.http.baz == "quux"
 } -run

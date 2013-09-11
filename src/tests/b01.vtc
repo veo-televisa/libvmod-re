@@ -13,6 +13,10 @@ varnish v1 -vcl+backend {
                         return(pass);
                 } else if (re.match(req.url, "snafu")) {
                         return(pipe);
+                } else if ((re.match_dyn(req.url, "foobar"))) {
+                        return(pass);
+                } else if (re.match_dyn(req.url, "snafu")) {
+                        return(pipe);
                 } else {
                         return(pass);
                 }
@@ -24,8 +28,21 @@ varnish v1 -vcl+backend {
 		} else {
 			error 999;
 		}
+
 		if (!re.match(beresp.http.bar, "bar")) {
 			set beresp.http.bar1 = "2";
+		} else {
+			error 999;
+		}
+
+		if (re.match_dyn(beresp.http.foo, "bar")) {
+			set beresp.http.foo1d = "1";
+		} else {
+			error 999;
+		}
+
+		if (!re.match_dyn(beresp.http.bar, "bar")) {
+			set beresp.http.bar1d = "2";
 		} else {
 			error 999;
 		}
@@ -38,4 +55,6 @@ client c1 {
 	rxresp
 	expect resp.http.foo1 == "1"
 	expect resp.http.bar1 == "2"
+	expect resp.http.foo1d == "1"
+	expect resp.http.bar1d == "2"
 } -run

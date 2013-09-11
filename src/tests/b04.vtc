@@ -2,7 +2,6 @@ varnishtest "test null match (varnish r00913.vtc)"
 
 server s1 {
 	rxreq
-	expect req.url == "/bar"
 	txresp -body "foobar"
 } -start
 
@@ -16,13 +15,21 @@ varnish v1 -vcl+backend {
 		if (re.match(beresp.http.foo, "")) {
 			set beresp.http.bar = "YYY";
 		}
+		if (re.match_dyn(beresp.http.bar, "$")) {
+			set beresp.http.food = "XXX";
+		}
+		if (re.match_dyn(beresp.http.foo, "")) {
+			set beresp.http.bard = "YYY";
+		}
 	}
 } -start
 
 client c1 {
-	txreq  -url /bar -hdr "Foo: bar"
+	txreq
 	rxresp 
 	expect resp.http.content-length == 6
 	expect resp.http.foo == "XXX"
 	expect resp.http.bar == "YYY"
+	expect resp.http.food == "XXX"
+	expect resp.http.bard == "YYY"
 } -run

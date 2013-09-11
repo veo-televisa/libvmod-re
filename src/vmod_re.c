@@ -46,6 +46,7 @@
 struct sess_ov {
 	unsigned	magic;
 #define SESS_OV_MAGIC 0x844bfa39
+	const char	*pattern;
 	char		*subject;
 	int		ovector[MAX_OV];
 	int		count;
@@ -110,44 +111,49 @@ re_init(struct vmod_priv *priv,
 	return (0);
 }
 
-unsigned __match_proto__()
-vmod_match(struct sess *sp, struct vmod_priv *priv_vcl,
-           struct vmod_priv *priv_call, const char *str, const char *pattern)
+static unsigned
+match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
+      const char *str, const char *pattern, int dynamic)
 {
 	vre_t *re;
 	struct sess_tbl *tbl;
 	int s;
 
 	CHECK_OBJ_NOTNULL(sp, SESS_MAGIC);
-	AN(pattern);
 	CAST_OBJ_NOTNULL(tbl, priv_vcl->priv, SESS_TBL_MAGIC);
 	assert(sp->id < tbl->nsess);
 	CHECK_OBJ_NOTNULL(&tbl->sess[sp->id], SESS_OV_MAGIC);
-	if (str == NULL)
-		str = "";
+	AN(pattern);
 	
-	if (priv_call->priv == NULL) {
+	if (priv_call->priv == NULL
+	    || (dynamic && pattern != tbl->sess[sp->id].pattern)) {
 		int erroffset = 0;
 		const char *error = NULL;
 		
 		AZ(pthread_mutex_lock(&re_mutex));
-		if (priv_call->priv == NULL) {
+		if (priv_call->priv == NULL
+		    || (dynamic && strcmp(pattern,tbl->sess[sp->id].pattern))) {
 			priv_call->priv = VRE_compile(pattern, 0, &error,
 						      &erroffset);
 			if (priv_call->priv == NULL)
 				WSP(sp, SLT_VCL_error,
-				    "vmod re: error compiling regex [%s]: "
-				    "%s at position %d", pattern, error,
+				    "vmod re: error compiling regex \"%s\": "
+				    "%s (position %d)", pattern, error,
 				    erroffset);
 			else
 				priv_call->free = VRT_re_fini;
 		}
+		if (dynamic)
+			tbl->sess[sp->id].pattern
+				= WS_Dup(sp->wrk->ws, pattern);
 		AZ(pthread_mutex_unlock(&re_mutex));
 	}
 	re = (vre_t *) priv_call->priv;
 	if (re == NULL)
 		return 0;
 
+	if (str == NULL)
+		str = "";
 	s = VRE_exec(re, str, strlen(str), 0, 0, &tbl->sess[sp->id].ovector[0],
 	             MAX_OV, &params->vre_limits);
 	tbl->sess[sp->id].count = s;
@@ -160,6 +166,20 @@ vmod_match(struct sess *sp, struct vmod_priv *priv_vcl,
 	
 	tbl->sess[sp->id].subject = WS_Dup(sp->wrk->ws, str);
 	return 1;
+}
+
+unsigned __match_proto__()
+vmod_match(struct sess *sp, struct vmod_priv *priv_vcl,
+           struct vmod_priv *priv_call, const char *str, const char *pattern)
+{
+	return(match(sp, priv_vcl, priv_call, str, pattern, 0));
+}
+
+unsigned __match_proto__()
+vmod_match_dyn(struct sess *sp, struct vmod_priv *priv_vcl,
+           struct vmod_priv *priv_call, const char *str, const char *pattern)
+{
+	return(match(sp, priv_vcl, priv_call, str, pattern, 1));
 }
 
 const char * __match_proto__()

@@ -1,0 +1,45 @@
+varnishtest "dynamic matches"
+
+server s1 {
+	rxreq
+	txresp -hdr "Foo: baz" -hdr "Bar: baz" -body "foobar"
+	rxreq
+	expect req.url == "/foo"
+	txresp -hdr "Foo: baz" -hdr "Bar: quux" -body "foobar"
+} -start
+
+varnish v1 -vcl+backend {
+	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
+
+	sub vcl_fetch {
+		if (re.match(beresp.http.foo, beresp.http.bar)) {
+			set beresp.http.static = "match";
+		}
+		else {
+			set beresp.http.static = "nomatch";
+		}
+
+		if (re.match_dyn(beresp.http.foo, beresp.http.bar)) {
+			set beresp.http.dynamic = "match";
+		}
+		else {
+			set beresp.http.dynamic = "nomatch";
+		}
+	}
+} -start
+
+client c1 {
+	txreq
+	rxresp
+	expect resp.http.foo == "baz"
+	expect resp.http.bar == "baz"
+	expect resp.http.static  == "match"
+	expect resp.http.dynamic == "match"
+
+	txreq -url "/foo"
+	rxresp 
+	expect resp.http.foo == "baz"
+	expect resp.http.bar == "quux"
+	expect resp.http.static  == "match"
+	expect resp.http.dynamic == "nomatch"
+} -run

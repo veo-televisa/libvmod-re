@@ -3,9 +3,9 @@ varnishtest "cached compiled regexen"
 # run two clients, to test caching of compiled regexen
 server s1 {
 	rxreq
-	txresp -hdr "Foo: barbaz" -hdr "Bar: bazquux" -body "1111\n"
+	txresp -hdr "Foo: barbaz" -body "1111\n"
 	rxreq
-	txresp -hdr "Foo: barbaz" -hdr "Bar: bazquux" -body "1111\n"
+	txresp -hdr "Foo: barbaz" -body "1111\n"
 } -start
 
 varnish v1 -vcl+backend {
@@ -18,6 +18,13 @@ varnish v1 -vcl+backend {
 		} else {
 			error 999;
 		}
+
+		if (re.match_dyn(beresp.http.foo, "(bar)(baz)")) {
+			set beresp.http.foo1d = re.backref(1, "error1");
+			set beresp.http.foo2d = re.backref(2, "error2");
+		} else {
+			error 999;
+		}
 	}
 
 } -start
@@ -27,6 +34,8 @@ client c1 {
 	rxresp
 	expect resp.http.foo1 == "bar"
 	expect resp.http.foo2 == "baz"
+	expect resp.http.foo1d == "bar"
+	expect resp.http.foo2d == "baz"
 } -run
 
 client c2 {
@@ -34,4 +43,6 @@ client c2 {
 	rxresp
 	expect resp.http.foo1 == "bar"
 	expect resp.http.foo2 == "baz"
+	expect resp.http.foo1d == "bar"
+	expect resp.http.foo2d == "baz"
 } -run

@@ -11,7 +11,11 @@ varnish v1 -vcl+backend {
 	sub vcl_recv {
 	    if (re.match(req.http.host, "^(abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij)")) {
 		error 500 "not ok";
-		}
+            }
+
+	    if (re.match_dyn(req.http.host, "^(abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij)")) {
+		error 500 "not ok";
+            }
 	}
 } -start 
 
