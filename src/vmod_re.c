@@ -127,15 +127,26 @@ vmod_match(struct sess *sp, struct vmod_priv *priv_vcl,
 		str = "";
 	
 	if (priv_call->priv == NULL) {
+		int erroffset = 0;
+		const char *error = NULL;
+		
 		AZ(pthread_mutex_lock(&re_mutex));
 		if (priv_call->priv == NULL) {
-			VRT_re_init(&priv_call->priv, pattern);
-			priv_call->free = VRT_re_fini;
+			priv_call->priv = VRE_compile(pattern, 0, &error,
+						      &erroffset);
+			if (priv_call->priv == NULL)
+				WSP(sp, SLT_VCL_error,
+				    "vmod re: error compiling regex [%s]: "
+				    "%s at position %d", pattern, error,
+				    erroffset);
+			else
+				priv_call->free = VRT_re_fini;
 		}
 		AZ(pthread_mutex_unlock(&re_mutex));
 	}
 	re = (vre_t *) priv_call->priv;
-	AN(re);
+	if (re == NULL)
+		return 0;
 
 	s = VRE_exec(re, str, strlen(str), 0, 0, &tbl->sess[sp->id].ovector[0],
 	             MAX_OV, &params->vre_limits);
