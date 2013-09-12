@@ -8,7 +8,7 @@ Varnish Module for Regular Expression Matching with Backref Capture
 
 :Manual section: 3
 :Author: Geoffrey Simmons
-:Date: 2013-09-09
+:Date: 2013-09-13
 :Version: 0.1
 
 SYNOPSIS
@@ -19,6 +19,7 @@ SYNOPSIS
         import re;
 
         re.match(<string>, <regular expresssion>)
+        re.match_dyn(<string>, <regular expresssion>)
         re.backref(<integer>, <fallback>)
         re.version()
 
@@ -41,6 +42,11 @@ Example VCL::
 		}
 	}
 
+	sub vcl_fetch {
+		if (re.match_dyn(req.http.Cookie, beresp.http.X-Regex)) {
+		   set resp.http.Foo = re.backref(1, "");
+		}
+	}
 
 match
 -----
@@ -50,12 +56,34 @@ Prototype
 Returns
         boolean
 Description
-        Determines whether a string matches the given regular expression;
-	functionally equivalent to VCL's infix operator `~`. It is subject
-	to the same limitations, for example as set by the runtime
-	paramters `pcre_match_limit` and `pcre_match_limit_recursion`.
+        Determines whether a string matches the given regular
+	expression, which never changes for the lifetime of the VCL;
+	functionally equivalent to VCL's infix operator ``~`` for
+	fixed regex patterns.
+
+	``re.match`` only matches against the pattern provided the
+	first time it's called, and does not detect whether the
+	pattern is changed after that.
 Example
         ``re.match(beresp.http.Surrogate-Control, "max-age=(\d+);mysite")``
+
+match_dyn
+---------
+
+Prototype
+        re.match_dyn(<string>, <regular expression>)
+Returns
+        boolean
+Description
+        Determines whether a string matches the given regular
+	expression, which may change during the lifetime of the VCL;
+	equivalent to VCL's infix operator ``~`` for arbitrary regex
+	patterns.
+
+	``re.match_dyn`` is less efficient than ``re.match``, so if you
+	are matching against a fixed regex, you should use ``re.match``.
+Example
+        ``re.match_dyn(req.http.Cookie, beresp.http.X-Regex)``
 
 backref
 -------
@@ -66,19 +94,25 @@ Returns
         String
 Description
         Extracts the `nth` subexpression of the most recent successful
-	call to `re.match()` in the current session, or a fallback string
-	in case the extraction fails. Backref 0 indicates the full match.
-	Thus this function behaves like the `\\n` symbols in `regsub`
-	and `regsuball`, and the `$1`, `$2` ... variables in Perl.
+	call to ``re.match()`` or ``re.match_dyn`` in the same VCL
+	subroutine in the current session, or a fallback string in
+	case the extraction fails. Backref 0 indicates the entire
+	matched string.  Thus this function behaves like the ``\\n``
+	symbols in ``regsub`` and ``regsuball``, and the ``$1``,
+	``$2`` ...  variables in Perl.
 
-	After unsuccessful matches, the `fallback` string is returned
-	for any call to `re.backref()`.
+	After unsuccessful matches, the ``fallback`` string is returned
+	for any call to ``re.backref``.
 
-	The VCL infix operators `~` and `!~` do not affect this function,
-	nor do `regsub` or `regsuball`.
+	The VCL infix operators ``~`` and ``!~`` do not affect this
+	function, nor do ``regsub`` or ``regsuball``.
 
-	`re.backref` can extract up to 10 subexpressions, in addition to
-	to the full expression indicated by backref 0.
+	``re.backref`` can extract up to 10 subexpressions, in
+	addition to to the full expression indicated by backref 0.
+
+	If ``re.backref`` is called without any prior call to
+	``re.match`` or ``re.match_dyn`` in the same VCL subroutine,
+	then the result is undefined.
 Example
         ``set beresp.ttl = std.duration(re.backref(1, "120"), 120s);``
 
@@ -90,7 +124,7 @@ Prototype
 Returns
         string
 Description
-        Returns the string constant version-number of the header vmod.
+        Returns the version string for this vmod.
 Example
         ``set resp.http.X-re-version = re.version();``
 
@@ -101,11 +135,11 @@ INSTALLATION
 Installation requires the Varnish source tree (only the source matching the
 binary installation).
 
-1. `./autogen.sh`  (for git-installation)
-2. `./configure VARNISHSRC=/path/to/your/varnish/source/varnish-cache`
-3. `make`
-4. `make install` (may require root: sudo make install)
-5. `make check` (Optional for regression tests)
+1. ``./autogen.sh``  (for git-installation)
+2. ``./configure VARNISHSRC=/path/to/your/varnish/source/varnish-cache``
+3. ``make``
+4. ``make install`` (may require root: sudo make install)
+5. ``make check`` (Optional for regression tests)
 
 VARNISHSRCDIR is the directory of the Varnish source tree for which to
 compile your vmod. Both the VARNISHSRCDIR and VARNISHSRCDIR/include
@@ -120,8 +154,10 @@ ACKNOWLEDGEMENTS
 ================
 
 Author: Geoffrey Simmons <geoff@uplex.de>, UPLEX Nils Goroll Systemoptimierung.
-The implementation was inspired by ideas from Nils Goroll's esicookies VMOD
-and pmatch patch for Varnish 2, and by Kristian Lyngstøl's header VMOD.
+
+The implementation was inspired by ideas from Nils Goroll's esicookies
+VMOD and pmatch patch for Varnish 2, and by Kristian Lyngstøl's header
+VMOD.
 
 
 HISTORY
@@ -130,12 +166,18 @@ HISTORY
 Version 0.1: Initial version
 
 
-BUGS
-====
+LIMITATIONS
+===========
 
-You can't use dynamic regular expressions, which also holds true for normal
-regular expressions in regsub(), but VCL isn't able to warn you about this
-when it comes to vmods yet.
+The regular expressions in ``re.match`` and ``re.match_dyn`` are
+compiled at run-time, so there are no errors at VCL compile-time for
+invalid expressions. If an expression is invalid, then an error
+message is emitted to Varnish's shared memory log using the
+``VCL_error`` tag, and the match always fails.
+
+Regular expression matching is subject to the same limitations that
+hold for standard regexen in VCL, for example as set by the runtime
+parameters `pcre_match_limit` and `pcre_match_limit_recursion`.
 
 
 SEE ALSO
@@ -143,11 +185,12 @@ SEE ALSO
 
 * varnishd(1)
 * vcl(7)
+* pcre(3)
 
 COPYRIGHT
 =========
 
-This document is licensed under the same license as the
-libvmod-header project. See LICENSE for details.
+This document is licensed under the same license as the libvmod-re
+project. See LICENSE for details.
 
 * Copyright (c) 2013 UPLEX Nils Goroll Systemoptimierung
