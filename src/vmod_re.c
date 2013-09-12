@@ -117,22 +117,32 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 {
 	vre_t *re;
 	struct sess_tbl *tbl;
+	struct sess_ov *ov;
 	int s;
 
+	AN(pattern);
+	if (pattern == '\0')
+		return 1;
+	
 	CHECK_OBJ_NOTNULL(sp, SESS_MAGIC);
 	CAST_OBJ_NOTNULL(tbl, priv_vcl->priv, SESS_TBL_MAGIC);
 	assert(sp->id < tbl->nsess);
 	CHECK_OBJ_NOTNULL(&tbl->sess[sp->id], SESS_OV_MAGIC);
-	AN(pattern);
-	
+	ov = &tbl->sess[sp->id];
+
 	if (priv_call->priv == NULL
-	    || (dynamic && pattern != tbl->sess[sp->id].pattern)) {
+	    || (dynamic && strcmp(pattern, ov->pattern) != 0)) {
 		int erroffset = 0;
 		const char *error = NULL;
 		
 		AZ(pthread_mutex_lock(&re_mutex));
+		/*
+		 * Double-check the lock. For dynamic, the pointer would
+		 * have changed by now if another thread was already here,
+		 * so strcmp doesn't have to be repeated.
+		 */
 		if (priv_call->priv == NULL
-		    || (dynamic && strcmp(pattern,tbl->sess[sp->id].pattern))) {
+		    || (dynamic && (pattern != ov->pattern))) {
 			priv_call->priv = VRE_compile(pattern, 0, &error,
 						      &erroffset);
 			if (priv_call->priv == NULL)
@@ -144,8 +154,7 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 				priv_call->free = VRT_re_fini;
 		}
 		if (dynamic)
-			tbl->sess[sp->id].pattern
-				= WS_Dup(sp->wrk->ws, pattern);
+			ov->pattern = WS_Dup(sp->wrk->ws, pattern);
 		AZ(pthread_mutex_unlock(&re_mutex));
 	}
 	re = (vre_t *) priv_call->priv;
@@ -154,9 +163,9 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 
 	if (str == NULL)
 		str = "";
-	s = VRE_exec(re, str, strlen(str), 0, 0, &tbl->sess[sp->id].ovector[0],
+	s = VRE_exec(re, str, strlen(str), 0, 0, &ov->ovector[0],
 	             MAX_OV, &params->vre_limits);
-	tbl->sess[sp->id].count = s;
+	ov->count = s;
 	if (s < VRE_ERROR_NOMATCH) {
 		WSP(sp, SLT_VCL_error, "vmod re: regex match returned %d", s);
 		return 0;
@@ -164,7 +173,7 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 	if (s == VRE_ERROR_NOMATCH)
 		return 0;
 	
-	tbl->sess[sp->id].subject = WS_Dup(sp->wrk->ws, str);
+	ov->subject = WS_Dup(sp->wrk->ws, str);
 	return 1;
 }
 
