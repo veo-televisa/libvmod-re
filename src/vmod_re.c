@@ -140,8 +140,7 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 
 	if (priv_call->priv == NULL
 	    || (dynamic && strcmp(pattern, ov->pattern) != 0)) {
-		int erroffset = 0;
-		const char *error = NULL;
+		char *pat = ov->pattern;
 		
 		AZ(pthread_mutex_lock(&re_mutex));
 		/*
@@ -150,7 +149,10 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 		 * so strcmp doesn't have to be repeated.
 		 */
 		if (priv_call->priv == NULL
-		    || (dynamic && (pattern != ov->pattern))) {
+		    || (dynamic && (pat == ov->pattern))) {
+			int erroffset = 0;
+			const char *error = NULL;
+			
 			priv_call->priv = VRE_compile(pattern, 0, &error,
 						      &erroffset);
 			if (priv_call->priv == NULL)
@@ -158,13 +160,13 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 				    "vmod re: error compiling regex \"%s\": "
 				    "%s (position %d)", pattern, error,
 				    erroffset);
-			else
+			else {
 				priv_call->free = VRT_re_fini;
-			
-			if (dynamic) {
-				if (ov->pattern != NULL)
-					free(ov->pattern);
-				ov->pattern = strdup(pattern);
+				if (dynamic) {
+					if (ov->pattern != NULL)
+						free(ov->pattern);
+					ov->pattern = strdup(pattern);
+				}
 			}
 		}
 		AZ(pthread_mutex_unlock(&re_mutex));
