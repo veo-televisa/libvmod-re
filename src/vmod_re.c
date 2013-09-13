@@ -46,8 +46,8 @@
 typedef struct sess_ov {
 	unsigned	magic;
 #define SESS_OV_MAGIC 0x844bfa39
-	const char	*pattern;
-	char		*subject;
+	char		*pattern;
+	const char	*subject;
 	int		ovector[MAX_OV];
 	int		count;
 } sess_ov;
@@ -72,8 +72,11 @@ free_sess_tbl(void *priv)
 
 	CAST_OBJ_NOTNULL(tbl, priv, SESS_TBL_MAGIC);
 	for (int i = 0; i < tbl->nsess; i++)
-		if (tbl->sess[i] != NULL)
+		if (tbl->sess[i] != NULL) {
+			if (tbl->sess[i]->pattern != NULL)
+				free(tbl->sess[i]->pattern);
 			free(tbl->sess[i]);
+		}
 	free(tbl->sess);
 	free(tbl);
 }
@@ -158,8 +161,11 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 			else
 				priv_call->free = VRT_re_fini;
 		}
-		if (dynamic)
-			ov->pattern = WS_Dup(sp->wrk->ws, pattern);
+		if (dynamic) {
+			if (ov->pattern != NULL)
+				free(ov->pattern);
+			ov->pattern = strdup(pattern);
+		}
 		AZ(pthread_mutex_unlock(&re_mutex));
 	}
 	re = (vre_t *) priv_call->priv;
@@ -178,7 +184,7 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 	if (s == VRE_ERROR_NOMATCH)
 		return 0;
 	
-	ov->subject = WS_Dup(sp->wrk->ws, str);
+	ov->subject = str;
 	return 1;
 }
 
