@@ -160,11 +160,12 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 				    erroffset);
 			else
 				priv_call->free = VRT_re_fini;
-		}
-		if (dynamic) {
-			if (ov->pattern != NULL)
-				free(ov->pattern);
-			ov->pattern = strdup(pattern);
+			
+			if (dynamic) {
+				if (ov->pattern != NULL)
+					free(ov->pattern);
+				ov->pattern = strdup(pattern);
+			}
 		}
 		AZ(pthread_mutex_unlock(&re_mutex));
 	}
