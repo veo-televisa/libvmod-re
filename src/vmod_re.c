@@ -43,20 +43,20 @@
 
 #define MAX_OV 33
 
-struct sess_ov {
+typedef struct sess_ov {
 	unsigned	magic;
 #define SESS_OV_MAGIC 0x844bfa39
 	const char	*pattern;
 	char		*subject;
 	int		ovector[MAX_OV];
 	int		count;
-};
+} sess_ov;
 
 struct sess_tbl {
 	unsigned	magic;
 #define SESS_TBL_MAGIC 0x0cd0c7ca
 	int		nsess;
-	struct sess_ov	*sess;
+	sess_ov		**sess;
 };
 
 /*
@@ -71,13 +71,16 @@ free_sess_tbl(void *priv)
 	struct sess_tbl *tbl;
 
 	CAST_OBJ_NOTNULL(tbl, priv, SESS_TBL_MAGIC);
+	for (int i = 0; i < tbl->nsess; i++)
+		if (tbl->sess[i] != NULL)
+			free(tbl->sess[i]);
 	free(tbl->sess);
 	free(tbl);
 }
 
 /*
- * Set up a table of ovectors for each session, large enough to
- * fit max_open_files.
+ * Set up a table of ov structures for each session, large enough to fit
+ * max_open_files.
  */
 int __match_proto__()
 re_init(struct vmod_priv *priv,
@@ -101,10 +104,8 @@ re_init(struct vmod_priv *priv,
 	XXXAN(tbl);
 	tbl->nsess = nfd.rlim_max;
 
-	tbl->sess = calloc(tbl->nsess, sizeof(struct sess_ov));
+	tbl->sess = calloc(tbl->nsess, sizeof(sess_ov *));
 	XXXAN(tbl->sess);
-	for (int i = 0; i < tbl->nsess; i++)
-		tbl->sess[i].magic = SESS_OV_MAGIC;
 
 	priv->priv = tbl;
 	priv->free = free_sess_tbl;
@@ -117,7 +118,7 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 {
 	vre_t *re;
 	struct sess_tbl *tbl;
-	struct sess_ov *ov;
+	sess_ov *ov;
 	int s;
 
 	AN(pattern);
@@ -127,8 +128,12 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 	CHECK_OBJ_NOTNULL(sp, SESS_MAGIC);
 	CAST_OBJ_NOTNULL(tbl, priv_vcl->priv, SESS_TBL_MAGIC);
 	assert(sp->id < tbl->nsess);
-	CHECK_OBJ_NOTNULL(&tbl->sess[sp->id], SESS_OV_MAGIC);
-	ov = &tbl->sess[sp->id];
+	if (tbl->sess[sp->id] == NULL) {
+		ALLOC_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
+		XXXAN(tbl->sess[sp->id]);
+	}
+	CHECK_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
+	ov = tbl->sess[sp->id];
 
 	if (priv_call->priv == NULL
 	    || (dynamic && strcmp(pattern, ov->pattern) != 0)) {
@@ -196,6 +201,7 @@ vmod_backref(struct sess *sp, struct vmod_priv *priv_vcl, int refnum,
              const char *fallback)
 {
 	struct sess_tbl *tbl;
+	struct sess_ov *ov;
 	char *substr;
 	unsigned l;
 	int s;
@@ -205,19 +211,18 @@ vmod_backref(struct sess *sp, struct vmod_priv *priv_vcl, int refnum,
 	AN(fallback);
 	CAST_OBJ_NOTNULL(tbl, priv_vcl->priv, SESS_TBL_MAGIC);
 	assert(sp->id < tbl->nsess);
-	CHECK_OBJ_NOTNULL(&tbl->sess[sp->id], SESS_OV_MAGIC);
+	CHECK_OBJ_NOTNULL(tbl->sess[sp->id], SESS_OV_MAGIC);
+	ov = tbl->sess[sp->id];
 
-	if (tbl->sess[sp->id].count <= VRE_ERROR_NOMATCH)
+	if (ov->count <= VRE_ERROR_NOMATCH)
 		return fallback;
 	
-	AN(tbl->sess[sp->id].subject);
+	AN(ov->subject);
 
 	l = WS_Reserve(sp->wrk->ws, 0);
 	substr = sp->wrk->ws->f;
 
-	s = pcre_copy_substring(tbl->sess[sp->id].subject,
-	                        tbl->sess[sp->id].ovector,
-	                        tbl->sess[sp->id].count, refnum,
+	s = pcre_copy_substring(ov->subject, ov->ovector, ov->count, refnum,
 	                        substr, l);
 	if (s < 0) {
 		WSP(sp, SLT_VCL_error, "vmod re: backref returned %d", s);
