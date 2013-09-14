@@ -75,10 +75,10 @@ free_sess_tbl(void *priv)
 		if (tbl->sess[i] != NULL) {
 			if (tbl->sess[i]->pattern != NULL)
 				free(tbl->sess[i]->pattern);
-			free(tbl->sess[i]);
+			FREE_OBJ(tbl->sess[i]);
 		}
 	free(tbl->sess);
-	free(tbl);
+	FREE_OBJ(tbl);
 }
 
 /*
@@ -115,7 +115,7 @@ re_init(struct vmod_priv *priv,
 	return (0);
 }
 
-static unsigned
+static inline unsigned
 match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
       const char *str, const char *pattern, int dynamic)
 {
@@ -162,11 +162,8 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 				    erroffset);
 			else {
 				priv_call->free = VRT_re_fini;
-				if (dynamic) {
-					if (ov->pattern != NULL)
-						free(ov->pattern);
-					ov->pattern = strdup(pattern);
-				}
+				if (dynamic)
+					REPLACE(ov->pattern, pattern);
 			}
 		}
 		AZ(pthread_mutex_unlock(&re_mutex));
