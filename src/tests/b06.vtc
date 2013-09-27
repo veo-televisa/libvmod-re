@@ -9,6 +9,9 @@ server s1 {
 	rxreq
 	expect req.url == "/bar"
 	txresp -hdr "Foo: baz" -hdr "Bar: quux" -body "foobar"
+	rxreq
+	expect req.url == "/baz"
+	txresp -hdr "Foo: baz" -hdr "Bar: baz" -body "foobar"
 } -start
 
 varnish v1 -vcl+backend {
@@ -52,4 +55,11 @@ client c1 {
 	expect resp.http.bar == "quux"
 	expect resp.http.static  == "match"
 	expect resp.http.dynamic == "nomatch"
+
+	txreq -url "/baz"
+	rxresp 
+	expect resp.http.foo == "baz"
+	expect resp.http.bar == "baz"
+	expect resp.http.static  == "match"
+	expect resp.http.dynamic == "match"
 } -run

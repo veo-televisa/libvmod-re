@@ -36,7 +36,7 @@ client c1 {
 	expect resp.http.foo2 == "baz"
 	expect resp.http.foo1d == "bar"
 	expect resp.http.foo2d == "baz"
-} -run
+}
 
 client c2 {
 	txreq -url /foo
@@ -45,4 +45,7 @@ client c2 {
 	expect resp.http.foo2 == "baz"
 	expect resp.http.foo1d == "bar"
 	expect resp.http.foo2d == "baz"
-} -run
+}
+
+client c1 -run
+client c2 -run
