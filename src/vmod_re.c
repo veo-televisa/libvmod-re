@@ -217,7 +217,13 @@ vmod_backref(struct sess *sp, struct vmod_priv *priv_vcl, int refnum,
 	AN(fallback);
 	CAST_OBJ_NOTNULL(tbl, priv_vcl->priv, SESS_TBL_MAGIC);
 	assert(sp->id < tbl->nsess);
-	CHECK_OBJ_NOTNULL(tbl->sess[sp->id], SESS_OV_MAGIC);
+	if (tbl->sess[sp->id] == NULL) {
+		WSP(sp, SLT_VCL_error,
+		    "vmod re: backref called without prior match in the "
+		    "session");
+		return fallback;
+	}
+	CHECK_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
 	ov = tbl->sess[sp->id];
 
 	if (ov->count <= VRE_ERROR_NOMATCH)
