@@ -34,7 +34,8 @@ PKG_PROG_PKG_CONFIG
 
 # Checks for header files.
 AC_HEADER_STDC
-AC_CHECK_HEADERS([sys/stdlib.h])
+AC_CHECK_HEADERS([sys/resource.h])
+AC_CHECK_HEADERS([pcre.h], [], [AC_MSG_ERROR([pcre development headers required to build this vmod, please install pcre-devel])])
 
 # Check for python
 AC_CHECK_PROGS(PYTHON, [python3 python3.1 python3.2 python2.7 python2.6 python2.5 python2 python], [AC_MSG_ERROR([Python is needed to build this vmod, please install python.])])
@@ -118,11 +119,6 @@ if test "x$enable_stack_protector" != "xno"; then
 		[AC_MSG_WARN([-fstack-protector not supported, disabling])
 		    CFLAGS="$save_CFLAGS"])
 fi
-
-# --enable-tests
-AC_ARG_ENABLE(tests,
-	AS_HELP_STRING([--enable-tests],[build test programs (default is NO)]))
-AM_CONDITIONAL([ENABLE_TESTS], [test x$enable_tests = xyes])
 
 # --enable-werror
 AC_ARG_ENABLE(werror,
