@@ -34,6 +34,8 @@ PKG_PROG_PKG_CONFIG
 
 # Checks for header files.
 AC_HEADER_STDC
+AC_CHECK_HEADERS([stdlib.h])
+AC_CHECK_HEADERS([pthread.h])
 AC_CHECK_HEADERS([sys/resource.h])
 AC_CHECK_HEADERS([pcre.h], [], [AC_MSG_ERROR([pcre development headers required to build this vmod, please install pcre-devel])])
 
