@@ -90,7 +90,7 @@ re_init(struct vmod_priv *priv,
         const struct VCL_conf *vcl_conf __attribute__((unused)))
 {
 	struct sess_tbl	*tbl;
-	struct rlimit	nfd, rltest;
+	struct rlimit nfd;
 
 	AN(priv);
 	
@@ -98,10 +98,13 @@ re_init(struct vmod_priv *priv,
 
 	AZ(getrlimit(RLIMIT_NOFILE, &nfd));
 
+#ifndef DISABLE_MAXFD_TEST
+	struct rlimit rltest;
 	rltest.rlim_cur = nfd.rlim_cur;
 	rltest.rlim_max = nfd.rlim_max + 1;
 	AN(setrlimit(RLIMIT_NOFILE, &rltest));
 	assert(errno == EPERM);
+#endif
 
 	ALLOC_OBJ(tbl, SESS_TBL_MAGIC);
 	XXXAN(tbl);
