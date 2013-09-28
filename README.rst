@@ -132,23 +132,40 @@ Example
 INSTALLATION
 ============
 
-Installation requires the Varnish source tree (only the source matching the
-binary installation).
+Installation requires the Varnish source tree, whose version must
+match the version of the binary installation.
+
+Quick start
+-----------
 
 1. ``./autogen.sh``  (for git-installation)
 2. ``./configure VARNISHSRC=/path/to/your/varnish/source/varnish-cache``
 3. ``make``
-4. ``make install`` (may require root: sudo make install)
-5. ``make check`` (Optional for regression tests)
+4. ``make check`` (regression tests)
+5. ``make install`` (may require root: sudo make install)
 
-VARNISHSRCDIR is the directory of the Varnish source tree for which to
-compile your vmod. Both the VARNISHSRCDIR and VARNISHSRCDIR/include
-will be added to the include search paths for your module.
+``VARNISHSRC`` is the directory of the Varnish source tree against
+which to compile the vmod.
 
-Optionally you can also set the vmod install dir by adding VMODDIR=DIR
-(defaults to the pkg-config discovered directory from your Varnish
-installation).
+Optionally, you can also set the vmod install dir by adding
+``VMODDIR=DIR`` in the ``configure`` step (defaults to the pkg-config
+discovered directory from your Varnish installation).
 
+For developers
+--------------
+
+As with Varnish itself, you can set additional flags and macros in the
+``configure`` step, and you can use any of these options:
+
+* ``--enable-developer-warnings``
+* ``--enable-extra-developer-warnings`` (for GCC 4)
+* ``--enable-werror``
+
+The vmod must always build successfully with these options enabled.
+
+Also as with Varnish, you can add ``--enable-debugging-symbols``, so
+that the vmod's symbols are available to debuggers, in core dumps and
+so forth.
 
 ACKNOWLEDGEMENTS
 ================
@@ -176,7 +193,7 @@ message is emitted to Varnish's shared memory log using the
 ``VCL_error`` tag, and the match always fails.
 
 To maintain per-session state about the most recent regex matches, the
-vmod creates a table at initialization sized to the maximum file
+vmod creates a table at initialization, sized to the maximum file
 descriptor number (``ulimit -n``) defined for Varnish's process owner
 (since Varnish 3 uses file descriptor numbers as session
 IDs). Moreover, it fails an assertion (aborting Varnish) if the
