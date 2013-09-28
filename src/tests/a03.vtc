@@ -1,0 +1,22 @@
+varnishtest "re-vmod: vcl.use and .discard"
+
+server s1 {
+} -start
+
+varnish v1 -vcl+backend {
+	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
+} -start
+
+varnish v1 -vcl+backend {
+} 
+
+varnish v1 -cli "vcl.list"
+varnish v1 -cli "vcl.use vcl1"
+
+varnish v1 -cli "vcl.use vcl2"
+varnish v1 -cli "vcl.use vcl1"
+
+varnish v1 -cli "vcl.show vcl1"
+varnish v1 -cli "vcl.use vcl2"
+varnish v1 -cli "vcl.discard vcl1"
+varnish v1 -cli "vcl.list"
