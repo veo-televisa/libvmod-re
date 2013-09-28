@@ -2,13 +2,13 @@
 vmod_re
 =======
 
--------------------------------------------------------------------
-Varnish Module for Regular Expression Matching with Backref Capture
--------------------------------------------------------------------
+-------------------------------------------------------------------------
+Varnish Module for Regular Expression Matching with Subexpression Capture
+-------------------------------------------------------------------------
 
 :Manual section: 3
 :Author: Geoffrey Simmons
-:Date: 2013-09-13
+:Date: 2013-09-28
 :Version: 0.1
 
 SYNOPSIS
@@ -44,7 +44,7 @@ Example VCL::
 
 	sub vcl_fetch {
 		if (re.match_dyn(req.http.Cookie, beresp.http.X-Regex)) {
-		   set resp.http.Foo = re.backref(1, "");
+		   set resp.http.Foo = re.backref(2, "");
 		}
 	}
 
@@ -94,10 +94,10 @@ Returns
         String
 Description
         Extracts the `nth` subexpression of the most recent successful
-	call to ``re.match()`` or ``re.match_dyn`` in the same VCL
+	call to ``re.match`` or ``re.match_dyn`` in the same VCL
 	subroutine in the current session, or a fallback string in
 	case the extraction fails. Backref 0 indicates the entire
-	matched string.  Thus this function behaves like the ``\\n``
+	matched string.  Thus this function behaves like the ``\n``
 	symbols in ``regsub`` and ``regsuball``, and the ``$1``,
 	``$2`` ...  variables in Perl.
 
@@ -105,14 +105,14 @@ Description
 	for any call to ``re.backref``.
 
 	The VCL infix operators ``~`` and ``!~`` do not affect this
-	function, nor do ``regsub`` or ``regsuball``.
+	function, nor do the functions ``regsub`` or ``regsuball``.
 
 	``re.backref`` can extract up to 10 subexpressions, in
-	addition to to the full expression indicated by backref 0.
+	addition to the full expression indicated by backref 0.
 
 	If ``re.backref`` is called without any prior call to
-	``re.match`` or ``re.match_dyn`` in the same VCL subroutine,
-	then the result is undefined.
+	``re.match`` or ``re.match_dyn`` in the same VCL subroutine
+	call, then the result is undefined.
 Example
         ``set beresp.ttl = std.duration(re.backref(1, "120"), 120s);``
 
@@ -175,9 +175,38 @@ invalid expressions. If an expression is invalid, then an error
 message is emitted to Varnish's shared memory log using the
 ``VCL_error`` tag, and the match always fails.
 
+To maintain per-session state about the most recent regex matches, the
+vmod creates a table at initialization sized to the maximum file
+descriptor number (``ulimit -n``) defined for Varnish's process owner
+(since Varnish 3 uses file descriptor numbers as session
+IDs). Moreover, it fails an assertion (aborting Varnish) if the
+process owner is able to increase its own max file descriptor.
+
+The vmod only allocates the state data for session IDs that are
+actually used; nevertheless, this may lead to an unecessarily large
+memory footprint if the ``ulimit -n`` value for the Varnish user is
+excessively high.
+
+If you cannot configure the Varnish user so that it is unable to
+increase its own max file descriptor, you can disable the assertion
+that fails in that case by compiling the vmod with
+``-DDISABLE_MAXFD_TEST``. But be warned that Varnish running the vmod
+will crash if it ever uses a file descriptor for a session ID that is
+larger than the value of ``ulimit -n`` at vmod initialization.
+
+For best results, configure the Varnish user so that its max file
+descriptor is just a bit larger than ``thread_pools *
+thread_pool_max``, and cannot be increased by the user.
+
+The vmod allocates space for captured subexpressions from session
+workspaces. For typical usage, the default workspace size is almost
+certainly enough; but if you are capturing many, long subexpressions
+in each session, you might need to increase the Varnish parameter
+``sess_workspace``.
+
 Regular expression matching is subject to the same limitations that
 hold for standard regexen in VCL, for example as set by the runtime
-parameters `pcre_match_limit` and `pcre_match_limit_recursion`.
+parameters ``pcre_match_limit`` and ``pcre_match_limit_recursion``.
 
 
 SEE ALSO
