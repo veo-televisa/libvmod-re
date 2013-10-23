@@ -1,10 +1,10 @@
-INCLUDES = -I$(VARNISHSRC)/include -I$(VARNISHSRC)
+AM_CPPFLAGS = -I$(VARNISHSRC)/include -I$(VARNISHSRC) @PCRE_CFLAGS@
 
 vmoddir = $(VMODDIR)
 vmod_LTLIBRARIES = libvmod_re.la
 
 libvmod_re_la_LDFLAGS = -module -export-dynamic -avoid-version
-
+libvmod_re_la_LIBADD = @PCRE_LIBS@
 libvmod_re_la_SOURCES = \
 	vcc_if.c \
 	vcc_if.h \
