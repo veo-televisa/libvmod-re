@@ -43,10 +43,16 @@
 
 #define MAX_OV 33
 
+typedef struct re_t {
+	unsigned	magic;
+#define RE_MAGIC 0xd361bdcb	
+	vre_t		*re;
+	char		*pattern;
+} re_t;
+
 typedef struct sess_ov {
 	unsigned	magic;
 #define SESS_OV_MAGIC 0x844bfa39
-	char		*pattern;
 	const char	*subject;
 	int		ovector[MAX_OV];
 	int		count;
@@ -66,17 +72,27 @@ struct sess_tbl {
 pthread_mutex_t re_mutex;
 
 static void
+free_re(void *priv)
+{
+	struct re_t *re;
+	
+	CAST_OBJ_NOTNULL(re, priv, RE_MAGIC);
+	if (re->re != NULL)
+		VRE_free(&re->re);
+	if (re->pattern != NULL)
+		free(re->pattern);
+	FREE_OBJ(re);
+}
+
+static void
 free_sess_tbl(void *priv)
 {
 	struct sess_tbl *tbl;
 
 	CAST_OBJ_NOTNULL(tbl, priv, SESS_TBL_MAGIC);
 	for (int i = 0; i < tbl->nsess; i++)
-		if (tbl->sess[i] != NULL) {
-			if (tbl->sess[i]->pattern != NULL)
-				free(tbl->sess[i]->pattern);
+		if (tbl->sess[i] != NULL)
 			FREE_OBJ(tbl->sess[i]);
-		}
 	free(tbl->sess);
 	FREE_OBJ(tbl);
 }
@@ -122,7 +138,7 @@ static inline unsigned
 match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
       const char *str, const char *pattern, int dynamic)
 {
-	vre_t *re;
+	re_t *re;
 	struct sess_tbl *tbl;
 	sess_ov *ov;
 	int s;
@@ -141,43 +157,40 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 	CHECK_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
 	ov = tbl->sess[sp->id];
 
-	if (priv_call->priv == NULL
-	    || (dynamic && strcmp(pattern, ov->pattern) != 0)) {
-		char *pat = ov->pattern;
-		
+	CAST_OBJ(re, priv_call->priv, RE_MAGIC);
+	if (re == NULL || (dynamic && pattern != re->pattern)) {
 		AZ(pthread_mutex_lock(&re_mutex));
-		/*
-		 * Double-check the lock. For dynamic, the pointer would
-		 * have changed by now if another thread was already here,
-		 * so strcmp doesn't have to be repeated.
-		 */
-		if (priv_call->priv == NULL
-		    || (dynamic && (pat == ov->pattern))) {
+
+		/* Double-check the lock. */
+		if (re == NULL || (dynamic && pattern != re->pattern)) {
 			int erroffset = 0;
 			const char *error = NULL;
-			
-			priv_call->priv = VRE_compile(pattern, 0, &error,
-						      &erroffset);
-			if (priv_call->priv == NULL)
+
+			if (re == NULL) {
+				ALLOC_OBJ(re, RE_MAGIC);
+				XXXAN(re);
+			}
+			re->re = VRE_compile(pattern, 0, &error, &erroffset);
+			if (re->re == NULL)
 				WSP(sp, SLT_VCL_error,
 				    "vmod re: error compiling regex \"%s\": "
 				    "%s (position %d)", pattern, error,
 				    erroffset);
 			else {
-				priv_call->free = VRT_re_fini;
+				priv_call->priv = re;
+				priv_call->free = free_re;
 				if (dynamic)
-					REPLACE(ov->pattern, pattern);
+					REPLACE(re->pattern, pattern);
 			}
 		}
 		AZ(pthread_mutex_unlock(&re_mutex));
 	}
-	re = (vre_t *) priv_call->priv;
-	if (re == NULL)
+	if (re->re == NULL)
 		return 0;
 
 	if (str == NULL)
 		str = "";
-	s = VRE_exec(re, str, strlen(str), 0, 0, &ov->ovector[0],
+	s = VRE_exec(re->re, str, strlen(str), 0, 0, &ov->ovector[0],
 	             MAX_OV, &params->vre_limits);
 	ov->count = s;
 	if (s < VRE_ERROR_NOMATCH) {
