@@ -169,6 +169,8 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 			if (re == NULL) {
 				ALLOC_OBJ(re, RE_MAGIC);
 				XXXAN(re);
+				priv_call->priv = re;
+				priv_call->free = free_re;
 			}
 			re->re = VRE_compile(pattern, 0, &error, &erroffset);
 			if (re->re == NULL)
@@ -177,8 +179,6 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 				    "%s (position %d)", pattern, error,
 				    erroffset);
 			else {
-				priv_call->priv = re;
-				priv_call->free = free_re;
 				if (dynamic)
 					REPLACE(re->pattern, pattern);
 			}
