@@ -46,7 +46,7 @@
 typedef struct re_t {
 	unsigned	magic;
 #define RE_MAGIC 0xd361bdcb	
-	vre_t		*re;
+	vre_t		*vre;
 	char		*pattern;
 } re_t;
 
@@ -77,8 +77,8 @@ free_re(void *priv)
 	struct re_t *re;
 	
 	CAST_OBJ_NOTNULL(re, priv, RE_MAGIC);
-	if (re->re != NULL)
-		VRE_free(&re->re);
+	if (re->vre != NULL)
+		VRE_free(&re->vre);
 	if (re->pattern != NULL)
 		free(re->pattern);
 	FREE_OBJ(re);
@@ -172,8 +172,8 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 				priv_call->priv = re;
 				priv_call->free = free_re;
 			}
-			re->re = VRE_compile(pattern, 0, &error, &erroffset);
-			if (re->re == NULL)
+			re->vre = VRE_compile(pattern, 0, &error, &erroffset);
+			if (re->vre == NULL)
 				WSP(sp, SLT_VCL_error,
 				    "vmod re: error compiling regex \"%s\": "
 				    "%s (position %d)", pattern, error,
@@ -185,12 +185,12 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 		}
 		AZ(pthread_mutex_unlock(&re_mutex));
 	}
-	if (re->re == NULL)
+	if (re->vre == NULL)
 		return 0;
 
 	if (str == NULL)
 		str = "";
-	s = VRE_exec(re->re, str, strlen(str), 0, 0, &ov->ovector[0],
+	s = VRE_exec(re->vre, str, strlen(str), 0, 0, &ov->ovector[0],
 	             MAX_OV, &params->vre_limits);
 	ov->count = s;
 	if (s < VRE_ERROR_NOMATCH) {
