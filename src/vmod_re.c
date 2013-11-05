@@ -26,6 +26,8 @@
  * SUCH DAMAGE.
  */
 
+#include "config.h"
+
 #include <stdlib.h>
 #include <pthread.h>
 #include <sys/resource.h>
@@ -39,7 +41,6 @@
 #include "miniobj.h"
 
 #include "vcc_if.h"
-#include "config.h"
 
 #define MAX_OV 33
 
