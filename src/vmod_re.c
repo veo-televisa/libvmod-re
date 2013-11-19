@@ -2,7 +2,8 @@
  * Copyright (c) 2013 UPLEX Nils Goroll Systemoptimierung
  * All rights reserved
  *
- * Author: Geoffrey Simmons <geoffrey.simmons@uplex.de>
+ * Authors: Geoffrey Simmons <geoffrey.simmons@uplex.de>
+ *	    Nils Goroll <nils.goroll@uplex.de>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -39,16 +40,20 @@
 #include "bin/varnishd/cache.h"
 #include "vas.h"
 #include "miniobj.h"
+#include "vmb.h"
 
 #include "vcc_if.h"
 
 #define MAX_OV 33
 
+/* 
+ * XXX we don't need the re_t obj at the moment, should
+ * we keep it ?
+ */
 typedef struct re_t {
 	unsigned	magic;
 #define RE_MAGIC 0xd361bdcb	
 	vre_t		*vre;
-	char		*pattern;
 } re_t;
 
 typedef struct sess_ov {
@@ -80,8 +85,6 @@ free_re(void *priv)
 	CAST_OBJ_NOTNULL(re, priv, RE_MAGIC);
 	if (re->vre != NULL)
 		VRE_free(&re->vre);
-	if (re->pattern != NULL)
-		free(re->pattern);
 	FREE_OBJ(re);
 }
 
@@ -139,15 +142,82 @@ static inline unsigned
 match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
       const char *str, const char *pattern, int dynamic)
 {
-	re_t *re;
+	vre_t *vre;
 	struct sess_tbl *tbl;
 	sess_ov *ov;
 	int s;
 
 	AN(pattern);
+
+	/* a null pattern always matches */
 	if (pattern == '\0')
 		return 1;
 	
+	if (dynamic) {
+		/*
+		 * should we cache here?
+		 *
+		 * if we wanted to use priv_call, we would need to run the match
+		 * under the lock or would need refcounting with delayed free.
+		 *
+		 * A real LRU/MFU pattern -> vre cache probably would be a better idea
+		 *
+		 * also, as long as we don't cache, we will always recompile a bad re
+		 */
+		int erroffset = 0;
+		const char *error = NULL;
+
+		vre = VRE_compile(pattern, 0, &error, &erroffset);
+		if (vre == NULL)
+			WSP(sp, SLT_VCL_error,
+			    "vmod re: error compiling dynamic regex \"%s\": "
+			    "%s (position %d)", pattern, error,
+			    erroffset);
+	} else if (priv_call->priv) {
+		re_t *re;
+
+		CAST_OBJ(re, priv_call->priv, RE_MAGIC);
+		vre = re->vre;
+	} else {
+		re_t *re;
+		int erroffset = 0;
+		const char *error = NULL;
+
+		AZ(pthread_mutex_lock(&re_mutex));
+		/* re-check under the lock */
+		if (priv_call->priv) {
+			CAST_OBJ(re, priv_call->priv, RE_MAGIC);
+			vre = re->vre;
+			goto unlock;
+		}
+
+		ALLOC_OBJ(re, RE_MAGIC);
+		XXXAN(re);
+
+		vre = VRE_compile(pattern, 0, &error, &erroffset);
+		if (vre == NULL)
+			WSP(sp, SLT_VCL_error,
+			    "vmod re: error compiling regex \"%s\": "
+			    "%s (position %d)", pattern, error,
+			    erroffset);
+		re->vre = vre;
+		/*
+		 * make sure the re obj is complete before we commit
+		 * the pointer
+		 */
+		VMB();
+		priv_call->priv = re;
+		priv_call->free = free_re;
+	  unlock:
+		AZ(pthread_mutex_unlock(&re_mutex));
+	}
+		
+
+	/* compilation error */
+	if (vre == NULL)
+		return 0;
+
+	/* get the ov only once we actually have a vre */
 	CHECK_OBJ_NOTNULL(sp, SESS_MAGIC);
 	CAST_OBJ_NOTNULL(tbl, priv_vcl->priv, SESS_TBL_MAGIC);
 	assert(sp->id < tbl->nsess);
@@ -158,51 +228,29 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 	CHECK_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
 	ov = tbl->sess[sp->id];
 
-	CAST_OBJ(re, priv_call->priv, RE_MAGIC);
-	if (re == NULL || (dynamic && pattern != re->pattern)) {
-		AZ(pthread_mutex_lock(&re_mutex));
-
-		/* Double-check the lock. */
-		if (re == NULL || (dynamic && pattern != re->pattern)) {
-			int erroffset = 0;
-			const char *error = NULL;
-
-			if (re == NULL) {
-				ALLOC_OBJ(re, RE_MAGIC);
-				XXXAN(re);
-				priv_call->priv = re;
-				priv_call->free = free_re;
-			}
-			re->vre = VRE_compile(pattern, 0, &error, &erroffset);
-			if (re->vre == NULL)
-				WSP(sp, SLT_VCL_error,
-				    "vmod re: error compiling regex \"%s\": "
-				    "%s (position %d)", pattern, error,
-				    erroffset);
-			else {
-				if (dynamic)
-					REPLACE(re->pattern, pattern);
-			}
-		}
-		AZ(pthread_mutex_unlock(&re_mutex));
-	}
-	if (re->vre == NULL)
-		return 0;
-
 	if (str == NULL)
 		str = "";
-	s = VRE_exec(re->vre, str, strlen(str), 0, 0, &ov->ovector[0],
+	s = VRE_exec(vre, str, strlen(str), 0, 0, &ov->ovector[0],
 	             MAX_OV, &params->vre_limits);
 	ov->count = s;
 	if (s < VRE_ERROR_NOMATCH) {
 		WSP(sp, SLT_VCL_error, "vmod re: regex match returned %d", s);
-		return 0;
+		goto err;
 	}
 	if (s == VRE_ERROR_NOMATCH)
-		return 0;
+		goto err;
 	
 	ov->subject = str;
+
+  ok:
+	if (dynamic)
+		VRE_free(&vre);
 	return 1;
+
+  err:
+	if (dynamic)
+		VRE_free(&vre);
+	return 0;
 }
 
 unsigned __match_proto__()
