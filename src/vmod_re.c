@@ -44,7 +44,17 @@
 
 #include "vcc_if.h"
 
-#define MAX_OV 33
+/* pcreapi(3):
+ * 
+ * The first two-thirds of the vector is used to pass back captured substrings,
+ * each substring using a pair of integers. The remaining third of the vector is
+ * used as workspace by pcre_exec() while matching capturing subpatterns, and is
+ * not available for passing back information.
+ */
+
+#define MAX_MATCHES	11
+#define MAX_OV		((MAX_MATCHES) * 3)
+#define MAX_OV_USED	((MAX_MATCHES) * 2)
 
 /* 
  * XXX we don't need the re_t obj at the moment, should
@@ -60,8 +70,10 @@ typedef struct sess_ov {
 	unsigned	magic;
 #define SESS_OV_MAGIC 0x844bfa39
 	const char	*subject;
-	int		ovector[MAX_OV];
+	int		ovector[MAX_OV_USED];
 	int		count;
+	unsigned	xid;
+	void		*ws;
 } sess_ov;
 
 struct sess_tbl {
@@ -99,6 +111,55 @@ free_sess_tbl(void *priv)
 			FREE_OBJ(tbl->sess[i]);
 	free(tbl->sess);
 	FREE_OBJ(tbl);
+}
+
+static inline void 
+init_ov(struct sess_ov *ov, struct sess *sp)
+{
+	ov->subject = NULL;
+	ov->count = -1;
+	ov->xid = sp->xid;
+	ov->ws = sp->wrk->ws;
+}
+
+static inline sess_ov *
+get_ov(struct sess *sp, struct vmod_priv *priv_vcl, const int init)
+{
+	struct sess_tbl *tbl;
+	struct sess_ov *ov;
+
+	CHECK_OBJ_NOTNULL(sp, SESS_MAGIC);
+	AN(priv_vcl);
+
+	CAST_OBJ_NOTNULL(tbl, priv_vcl->priv, SESS_TBL_MAGIC);
+	assert(sp->id < tbl->nsess);
+	assert(sp->id >= 0);
+	if (tbl->sess[sp->id] == NULL) {
+		if (init == 0)
+			return NULL;
+
+		ALLOC_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
+		XXXAN(tbl->sess[sp->id]);
+
+		init_ov(tbl->sess[sp->id], sp);
+
+		return (tbl->sess[sp->id]);
+	}
+
+	CHECK_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
+	ov = tbl->sess[sp->id];
+
+	/*
+	 * we need to make sure that we do not back-ref matches from a previous
+	 * session on the same sp->id, so check the xid and the worker ws just
+	 * in case we have non-unique xids (some versions of varnish3)
+	 */
+
+	if ((ov->xid != sp->xid) ||
+	    (ov->ws != sp->wrk->ws))
+		init_ov(ov, sp);
+	
+	return (ov);
 }
 
 /*
@@ -143,9 +204,10 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
       const char *str, const char *pattern, int dynamic)
 {
 	vre_t *vre;
-	struct sess_tbl *tbl;
 	sess_ov *ov;
+	int nov[MAX_OV];
 	int s;
+	size_t cp;
 
 	AN(pattern);
 
@@ -218,21 +280,22 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 		return 0;
 
 	/* get the ov only once we actually have a vre */
-	CHECK_OBJ_NOTNULL(sp, SESS_MAGIC);
-	CAST_OBJ_NOTNULL(tbl, priv_vcl->priv, SESS_TBL_MAGIC);
-	assert(sp->id < tbl->nsess);
-	if (tbl->sess[sp->id] == NULL) {
-		ALLOC_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
-		XXXAN(tbl->sess[sp->id]);
-	}
-	CHECK_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
-	ov = tbl->sess[sp->id];
+	ov = get_ov(sp, priv_vcl, 1);
+	AN(ov);
+
+	/* 
+	 * we must not touch the ov unless we have a successful match, so
+	 * vmod_backref will always reference the last successful match
+	 */
 
 	if (str == NULL)
 		str = "";
-	s = VRE_exec(vre, str, strlen(str), 0, 0, &ov->ovector[0],
-	             MAX_OV, &params->vre_limits);
-	ov->count = s;
+
+	assert(sizeof(nov) == (sizeof(nov[0]) * MAX_OV));
+
+	s = VRE_exec(vre, str, strlen(str), 0, 0, nov,
+	    MAX_OV, &params->vre_limits);
+
 	if (s < VRE_ERROR_NOMATCH) {
 		WSP(sp, SLT_VCL_error, "vmod re: regex match returned %d", s);
 		goto err;
@@ -240,9 +303,18 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 	if (s == VRE_ERROR_NOMATCH)
 		goto err;
 	
-	ov->subject = str;
-
   ok:
+	if (s == 0)
+		cp = sizeof(nov);	/* ov overflow */
+	else
+		cp = s * 2 * sizeof(*nov);
+
+	assert(cp <= sizeof(nov));
+
+	ov->subject = str;
+	memcpy(ov->ovector, nov, cp);
+	ov->count = s;
+
 	if (dynamic)
 		VRE_free(&vre);
 	return 1;
@@ -278,21 +350,13 @@ vmod_backref(struct sess *sp, struct vmod_priv *priv_vcl, int refnum,
 	int s;
 
 	CHECK_OBJ_NOTNULL(sp, SESS_MAGIC);
-	AN(priv_vcl);
 	AN(fallback);
-	CAST_OBJ_NOTNULL(tbl, priv_vcl->priv, SESS_TBL_MAGIC);
-	assert(sp->id < tbl->nsess);
-	if (tbl->sess[sp->id] == NULL) {
-		WSP(sp, SLT_VCL_error,
-		    "vmod re: backref called without prior match in the "
-		    "session");
-		return fallback;
-	}
-	CHECK_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
-	ov = tbl->sess[sp->id];
 
-	if (ov->count <= VRE_ERROR_NOMATCH)
-		return fallback;
+	ov = get_ov(sp, priv_vcl, 0);
+
+	if ((ov == NULL) ||
+	    (ov->count < 0))
+		goto notinit;
 	
 	AN(ov->subject);
 
@@ -308,6 +372,12 @@ vmod_backref(struct sess *sp, struct vmod_priv *priv_vcl, int refnum,
 	}
 	WS_Release(sp->wrk->ws, s + 1);
 	return substr;
+
+  notinit:
+	WSP(sp, SLT_VCL_error,
+	    "vmod re: backref called without prior match in the "
+	    "session");
+	return fallback;
 }
 
 const char * __match_proto__()

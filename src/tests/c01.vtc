@@ -39,13 +39,18 @@ varnish v1 -vcl+backend {
 			error 999;
 		}
 
+		/* does not match */
 		if (re.match(beresp.http.foo, "(frob)(nitz)")) {
 			set beresp.http.frob = "nitz";
 		}
+		/* ... so 0..4 contain contain the previous values */
 		set beresp.http.frob0 = re.backref(0, "fallback0");
 		set beresp.http.frob1 = re.backref(1, "fallback1");
 		set beresp.http.frob2 = re.backref(2, "fallback2");
-
+		set beresp.http.frob3 = re.backref(3, "fallback3");
+		set beresp.http.frob4 = re.backref(4, "fallback4");
+		set beresp.http.frob5 = re.backref(5, "fallback5");
+		set beresp.http.frob6 = re.backref(5, "fallback6");
 }
 
 } -start
@@ -63,7 +68,11 @@ client c1 {
 	expect resp.http.bar3 == "barfallback"
 	expect resp.http.frap == "_barf_frap_"
 	expect resp.http.frob != "nitz"
-	expect resp.http.frob0 == "fallback0"
-	expect resp.http.frob1 == "fallback1"
-	expect resp.http.frob2 == "fallback2"
+	expect resp.http.frob0 == "barf"
+	expect resp.http.frob1 == "b"
+	expect resp.http.frob2 == "a"
+	expect resp.http.frob3 == "r"
+	expect resp.http.frob4 == "f"
+	expect resp.http.frob5 == "fallback5"
+	expect resp.http.frob6 == "fallback6"
 } -run
