@@ -306,7 +306,7 @@ vmod_backref(struct sess *sp, struct vmod_priv *priv_vcl, int refnum,
 		WS_Release(sp->wrk->ws, 0);
 		return fallback;
 	}
-	WS_Release(sp->wrk->ws, s);
+	WS_Release(sp->wrk->ws, s + 1);
 	return substr;
 }
 
