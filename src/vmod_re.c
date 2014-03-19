@@ -46,10 +46,11 @@
 
 /* pcreapi(3):
  * 
- * The first two-thirds of the vector is used to pass back captured substrings,
- * each substring using a pair of integers. The remaining third of the vector is
- * used as workspace by pcre_exec() while matching capturing subpatterns, and is
- * not available for passing back information.
+ * The first two-thirds of the vector is used to pass back captured
+ * substrings, each substring using a pair of integers. The remaining
+ * third of the vector is used as workspace by pcre_exec() while matching
+ * capturing subpatterns, and is not available for passing back
+ * information.
  */
 
 #define MAX_MATCHES	11
@@ -150,13 +151,13 @@ get_ov(struct sess *sp, struct vmod_priv *priv_vcl, const int init)
 	ov = tbl->sess[sp->id];
 
 	/*
-	 * we need to make sure that we do not back-ref matches from a previous
-	 * session on the same sp->id, so check the xid and the worker ws just
-	 * in case we have non-unique xids (some versions of varnish3)
+	 * we need to make sure that we do not back-ref matches from a
+	 * previous session on the same sp->id, so check the xid and the
+	 * worker ws just in case we have non-unique xids (some versions
+	 * of varnish3)
 	 */
 
-	if ((ov->xid != sp->xid) ||
-	    (ov->ws != sp->wrk->ws))
+	if ((ov->xid != sp->xid) || (ov->ws != sp->wrk->ws))
 		init_ov(ov, sp);
 	
 	return (ov);
@@ -205,8 +206,8 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 {
 	vre_t *vre;
 	sess_ov *ov;
-	int nov[MAX_OV];
-	int s;
+	int s, nov[MAX_OV];
+	unsigned result;
 	size_t cp;
 
 	AN(pattern);
@@ -219,12 +220,15 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 		/*
 		 * should we cache here?
 		 *
-		 * if we wanted to use priv_call, we would need to run the match
-		 * under the lock or would need refcounting with delayed free.
+		 * if we wanted to use priv_call, we would need to run the
+		 * match under the lock or would need refcounting with
+		 * delayed free.
 		 *
-		 * A real LRU/MFU pattern -> vre cache probably would be a better idea
+		 * A real LRU/MFU pattern -> vre cache probably would be a
+		 * better idea
 		 *
-		 * also, as long as we don't cache, we will always recompile a bad re
+		 * also, as long as we don't cache, we will always
+		 * recompile a bad re
 		 */
 		int erroffset = 0;
 		const char *error = NULL;
@@ -235,12 +239,14 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 			    "vmod re: error compiling dynamic regex \"%s\": "
 			    "%s (position %d)", pattern, error,
 			    erroffset);
-	} else if (priv_call->priv) {
+	}
+	else if (priv_call->priv) {
 		re_t *re;
 
 		CAST_OBJ(re, priv_call->priv, RE_MAGIC);
 		vre = re->vre;
-	} else {
+	}
+	else {
 		re_t *re;
 		int erroffset = 0;
 		const char *error = NULL;
@@ -250,27 +256,26 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 		if (priv_call->priv) {
 			CAST_OBJ(re, priv_call->priv, RE_MAGIC);
 			vre = re->vre;
-			goto unlock;
 		}
-
-		ALLOC_OBJ(re, RE_MAGIC);
-		XXXAN(re);
-
-		vre = VRE_compile(pattern, 0, &error, &erroffset);
-		if (vre == NULL)
-			WSP(sp, SLT_VCL_error,
-			    "vmod re: error compiling regex \"%s\": "
-			    "%s (position %d)", pattern, error,
-			    erroffset);
-		re->vre = vre;
-		/*
-		 * make sure the re obj is complete before we commit
-		 * the pointer
-		 */
-		VMB();
-		priv_call->priv = re;
-		priv_call->free = free_re;
-	  unlock:
+		else {
+			ALLOC_OBJ(re, RE_MAGIC);
+			XXXAN(re);
+			
+			vre = VRE_compile(pattern, 0, &error, &erroffset);
+			if (vre == NULL)
+				WSP(sp, SLT_VCL_error,
+				    "vmod re: error compiling regex \"%s\": "
+				    "%s (position %d)", pattern, error,
+				    erroffset);
+			re->vre = vre;
+			/*
+			 * make sure the re obj is complete before we commit
+			 * the pointer
+			 */
+			VMB();
+			priv_call->priv = re;
+			priv_call->free = free_re;
+		}
 		AZ(pthread_mutex_unlock(&re_mutex));
 	}
 		
@@ -294,35 +299,31 @@ match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
 	assert(sizeof(nov) == (sizeof(nov[0]) * MAX_OV));
 
 	s = VRE_exec(vre, str, strlen(str), 0, 0, nov,
-	    MAX_OV, &params->vre_limits);
+		     MAX_OV, &params->vre_limits);
 
-	if (s < VRE_ERROR_NOMATCH) {
-		WSP(sp, SLT_VCL_error, "vmod re: regex match returned %d", s);
-		goto err;
+	if (s > VRE_ERROR_NOMATCH) {
+		if (s == 0)
+			cp = sizeof(nov);	/* ov overflow */
+		else
+			cp = s * 2 * sizeof(*nov);
+
+		assert(cp <= sizeof(nov));
+
+		ov->subject = str;
+		memcpy(ov->ovector, nov, cp);
+		ov->count = s;
+		result = 1;
 	}
-	if (s == VRE_ERROR_NOMATCH)
-		goto err;
-	
-  ok:
-	if (s == 0)
-		cp = sizeof(nov);	/* ov overflow */
-	else
-		cp = s * 2 * sizeof(*nov);
-
-	assert(cp <= sizeof(nov));
-
-	ov->subject = str;
-	memcpy(ov->ovector, nov, cp);
-	ov->count = s;
+	else {
+		if (s < VRE_ERROR_NOMATCH)
+			WSP(sp, SLT_VCL_error,
+			    "vmod re: regex match returned %d", s);
+		result = 0;
+	}
 
 	if (dynamic)
 		VRE_free(&vre);
-	return 1;
-
-  err:
-	if (dynamic)
-		VRE_free(&vre);
-	return 0;
+	return result;
 }
 
 unsigned __match_proto__()
@@ -343,7 +344,6 @@ const char * __match_proto__()
 vmod_backref(struct sess *sp, struct vmod_priv *priv_vcl, int refnum,
              const char *fallback)
 {
-	struct sess_tbl *tbl;
 	struct sess_ov *ov;
 	char *substr;
 	unsigned l;
@@ -354,9 +354,12 @@ vmod_backref(struct sess *sp, struct vmod_priv *priv_vcl, int refnum,
 
 	ov = get_ov(sp, priv_vcl, 0);
 
-	if ((ov == NULL) ||
-	    (ov->count < 0))
-		goto notinit;
+	if ((ov == NULL) || (ov->count < 0)) {
+		WSP(sp, SLT_VCL_error,
+		    "vmod re: backref called without prior match in the "
+		    "session");
+		return fallback;
+	}
 	
 	AN(ov->subject);
 
@@ -372,12 +375,6 @@ vmod_backref(struct sess *sp, struct vmod_priv *priv_vcl, int refnum,
 	}
 	WS_Release(sp->wrk->ws, s + 1);
 	return substr;
-
-  notinit:
-	WSP(sp, SLT_VCL_error,
-	    "vmod re: backref called without prior match in the "
-	    "session");
-	return fallback;
 }
 
 const char * __match_proto__()
