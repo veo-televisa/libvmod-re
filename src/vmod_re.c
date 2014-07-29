@@ -158,8 +158,11 @@ get_ov(struct sess *sp, struct vmod_priv *priv_vcl, const int init)
 	 */
 
 	if ((ov->xid != sp->xid) || (ov->ws != sp->wrk->ws))
-		init_ov(ov, sp);
-	
+		if (init == 0)
+			return NULL;
+		else
+			init_ov(ov, sp);
+
 	return (ov);
 }
 
