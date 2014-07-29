@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2013 UPLEX Nils Goroll Systemoptimierung
+ * Copyright (c) 2013 - 2014 UPLEX Nils Goroll Systemoptimierung
  * All rights reserved
  *
  * Authors: Geoffrey Simmons <geoffrey.simmons@uplex.de>
@@ -120,7 +120,7 @@ init_ov(struct sess_ov *ov, struct sess *sp)
 	ov->subject = NULL;
 	ov->count = -1;
 	ov->xid = sp->xid;
-	ov->ws = sp->wrk->ws;
+	ov->ws = sp->ws;
 }
 
 static inline sess_ov *
@@ -157,7 +157,7 @@ get_ov(struct sess *sp, struct vmod_priv *priv_vcl, const int init)
 	 * of varnish3)
 	 */
 
-	if ((ov->xid != sp->xid) || (ov->ws != sp->wrk->ws))
+	if ((ov->xid != sp->xid) || (ov->ws != sp->ws))
 		if (init == 0)
 			return NULL;
 		else
@@ -366,17 +366,17 @@ vmod_backref(struct sess *sp, struct vmod_priv *priv_vcl, int refnum,
 	
 	AN(ov->subject);
 
-	l = WS_Reserve(sp->wrk->ws, 0);
-	substr = sp->wrk->ws->f;
+	l = WS_Reserve(sp->ws, 0);
+	substr = sp->ws->f;
 
 	s = pcre_copy_substring(ov->subject, ov->ovector, ov->count, refnum,
 	                        substr, l);
 	if (s < 0) {
 		WSP(sp, SLT_VCL_error, "vmod re: backref returned %d", s);
-		WS_Release(sp->wrk->ws, 0);
+		WS_Release(sp->ws, 0);
 		return fallback;
 	}
-	WS_Release(sp->wrk->ws, s + 1);
+	WS_Release(sp->ws, s + 1);
 	return substr;
 }
 
