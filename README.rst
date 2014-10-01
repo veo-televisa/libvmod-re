@@ -9,7 +9,7 @@ Varnish Module for Regular Expression Matching with Subexpression Capture
 :Manual section: 3
 :Author: Geoffrey Simmons
 :Date: 2013-09-28
-:Version: 0.1
+:Version: 0.2
 
 SYNOPSIS
 ========
@@ -181,6 +181,8 @@ HISTORY
 =======
 
 Version 0.1: Initial version
+
+Version 0.2: various fixes, last version compatible with Varnish 3
 
 
 LIMITATIONS

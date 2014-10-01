@@ -1,6 +1,6 @@
 AC_PREREQ(2.59)
 AC_COPYRIGHT([Copyright (c) 2013 UPLEX Nils Goroll Systemoptimierung])
-AC_INIT([libvmod-header], [0.1])
+AC_INIT([libvmod-re], [0.2])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR(src/vmod_re.vcc)
 AM_CONFIG_HEADER(config.h)

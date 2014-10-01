@@ -157,11 +157,12 @@ get_ov(struct sess *sp, struct vmod_priv *priv_vcl, const int init)
 	 * of varnish3)
 	 */
 
-	if ((ov->xid != sp->xid) || (ov->ws != sp->ws))
+	if ((ov->xid != sp->xid) || (ov->ws != sp->ws)) {
 		if (init == 0)
 			return NULL;
 		else
 			init_ov(ov, sp);
+	}
 
 	return (ov);
 }
