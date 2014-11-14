@@ -8,43 +8,33 @@ server s1 {
 varnish v1 -vcl+backend {
 	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
 
+	sub vcl_init {
+	        new foobar = re.regex("foobar");
+		new snafu = re.regex("snafu");
+		new bar = re.regex("bar");
+	}
+
         sub vcl_recv {
-                if ((re.match(req.url, "foobar"))) {
+                if (foobar.match(req.url)) {
                         return(pass);
-                } else if (re.match(req.url, "snafu")) {
-                        return(pipe);
-                } else if ((re.match_dyn(req.url, "foobar"))) {
-                        return(pass);
-                } else if (re.match_dyn(req.url, "snafu")) {
+                } else if (snafu.match(req.url)) {
                         return(pipe);
                 } else {
                         return(pass);
                 }
         }
 
-	sub vcl_fetch {
-		if (re.match(beresp.http.foo, "bar")) {
+	sub vcl_backend_response {
+		if (bar.match(beresp.http.foo)) {
 			set beresp.http.foo1 = "1";
 		} else {
-			error 999;
+			set beresp.status = 999;
 		}
 
-		if (!re.match(beresp.http.bar, "bar")) {
+		if (!bar.match(beresp.http.bar)) {
 			set beresp.http.bar1 = "2";
 		} else {
-			error 999;
-		}
-
-		if (re.match_dyn(beresp.http.foo, "bar")) {
-			set beresp.http.foo1d = "1";
-		} else {
-			error 999;
-		}
-
-		if (!re.match_dyn(beresp.http.bar, "bar")) {
-			set beresp.http.bar1d = "2";
-		} else {
-			error 999;
+			set beresp.status = 999;
 		}
 	}
 
@@ -53,8 +43,7 @@ varnish v1 -vcl+backend {
 client c1 {
 	txreq
 	rxresp
+	expect resp.status == "200"
 	expect resp.http.foo1 == "1"
 	expect resp.http.bar1 == "2"
-	expect resp.http.foo1d == "1"
-	expect resp.http.bar1d == "2"
 } -run

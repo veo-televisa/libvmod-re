@@ -1,39 +1,51 @@
-varnishtest "re.backref not affected by standard VCL regex code"
+varnishtest "limit to backrefs 0 to 10"
 
 server s1 {
 	rxreq
-	txresp -hdr "Foo: barbaz" -body "1111\n"
+	txresp -hdr "Foo: 12345678901" -hdr "Bar: 123456789012" -body "1111\n"
 } -start
 
 varnish v1 -vcl+backend {
 	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
 
-	sub vcl_fetch {
-	    	if (!re.match(beresp.http.foo, "(bar)baz")) {
-		        error 503;
-		}
+	sub vcl_init {
+	       new tendots = re.regex("(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)");
+	       new moredots = re.regex("(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)");
+	}
 
-		if (beresp.http.foo ~ "bar(baz)") {
-			set beresp.http.tilde0 = re.backref(0, "tilde0");
-			set beresp.http.tilde1 = re.backref(1, "tilde1");
+	sub vcl_backend_response {
+		if (tendots.match(beresp.http.foo)) {
+			set beresp.http.foo0 = tendots.backref(0, "error0");
+			set beresp.http.foo1 = tendots.backref(1, "error1");
+			set beresp.http.foo2 = tendots.backref(2, "error2");
+			set beresp.http.foo3 = tendots.backref(3, "error3");
+			set beresp.http.foo4 = tendots.backref(4, "error4");
+			set beresp.http.foo5 = tendots.backref(5, "error5");
+			set beresp.http.foo6 = tendots.backref(6, "error6");
+			set beresp.http.foo7 = tendots.backref(7, "error7");
+			set beresp.http.foo8 = tendots.backref(8, "error8");
+			set beresp.http.foo9 = tendots.backref(9, "error9");
+			set beresp.http.foo10 = tendots.backref(10, "error10");
+			set beresp.http.foo11 = tendots.backref(11, "fallback");
 		} else {
-			error 999;
+			set beresp.status = 999;
 		}
-
-		if (beresp.http.foo !~ "bar(quux)") {
-			set beresp.http.neg0 = re.backref(0, "neg0");
-			set beresp.http.neg1 = re.backref(1, "neg1");
+		if (moredots.match(beresp.http.bar)) {
+			set beresp.http.bar0 = moredots.backref(0, "error0");
+			set beresp.http.bar1 = moredots.backref(1, "error1");
+			set beresp.http.bar2 = moredots.backref(2, "error2");
+			set beresp.http.bar3 = moredots.backref(3, "error3");
+			set beresp.http.bar4 = moredots.backref(4, "error4");
+			set beresp.http.bar5 = moredots.backref(5, "error5");
+			set beresp.http.bar6 = moredots.backref(6, "error6");
+			set beresp.http.bar7 = moredots.backref(7, "error7");
+			set beresp.http.bar8 = moredots.backref(8, "error8");
+			set beresp.http.bar9 = moredots.backref(9, "error9");
+			set beresp.http.bar10 = moredots.backref(10, "error10");
+			set beresp.http.bar11 = moredots.backref(11, "fallback");
 		} else {
-			error 999;
+			set beresp.status = 999;
 		}
-
-		set beresp.http.bar = regsub(beresp.http.foo, "bar(baz)", "\1");
-		set beresp.http.regsub0 = re.backref(0, "regsub0");
-		set beresp.http.regsub1 = re.backref(1, "regsub1");
-
-		set beresp.http.bar = regsuball(beresp.http.foo, "(.)", "x");
-		set beresp.http.regsuball0 = re.backref(0, "regsuball0");
-		set beresp.http.regsuball1 = re.backref(1, "regsuball1");
 	}
 
 } -start
@@ -42,12 +54,36 @@ client c1 {
 	txreq
 	rxresp
 	expect resp.status == 200
-	expect resp.http.tilde0 == "barbaz"
-	expect resp.http.tilde1 == "bar"
-	expect resp.http.neg0 == "barbaz"
-	expect resp.http.neg1 == "bar"
-	expect resp.http.regsub0 == "barbaz"
-	expect resp.http.regsub1 == "bar"
-	expect resp.http.regsuball0 == "barbaz"
-	expect resp.http.regsuball1 == "bar"
+	expect resp.http.foo0 == "1234567890"
+	expect resp.http.foo1 == "1"
+	expect resp.http.foo2 == "2"
+	expect resp.http.foo3 == "3"
+	expect resp.http.foo4 == "4"
+	expect resp.http.foo5 == "5"
+	expect resp.http.foo6 == "6"
+	expect resp.http.foo7 == "7"
+	expect resp.http.foo8 == "8"
+	expect resp.http.foo9 == "9"
+	expect resp.http.foo10 == "0"
+	expect resp.http.foo11 == "fallback"
+	expect resp.http.bar0 == "12345678901"
+	expect resp.http.bar1 == "1"
+	expect resp.http.bar2 == "2"
+	expect resp.http.bar3 == "3"
+	expect resp.http.bar4 == "4"
+	expect resp.http.bar5 == "5"
+	expect resp.http.bar6 == "6"
+	expect resp.http.bar7 == "7"
+	expect resp.http.bar8 == "8"
+	expect resp.http.bar9 == "9"
+	expect resp.http.bar10 == "0"
+	expect resp.http.bar11 == "fallback"
+} -run
+
+logexpect l1 -v v1 -d 1 -g vxid -q "VCL_Error" {
+	expect 0 * Begin req
+	expect * = VCL_Error "^vmod re: backref \d+ out of range$"
+	expect * = VCL_Error "^vmod re: capturing substrings exceed max \d+"
+	expect * = VCL_Error "^vmod re: backref \d+ out of range$"
+	expect * = End
 } -run

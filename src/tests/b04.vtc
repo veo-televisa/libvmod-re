@@ -8,18 +8,17 @@ server s1 {
 varnish v1 -vcl+backend {
 	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
 
-	sub vcl_fetch {
-		if (re.match(beresp.http.bar, "$")) {
+	sub vcl_init {
+	        new end = re.regex("$");
+		new empty = re.regex("");
+	}
+
+	sub vcl_backend_response {
+		if (end.match(beresp.http.bar)) {
 			set beresp.http.foo = "XXX";
 		}
-		if (re.match(beresp.http.foo, "")) {
+		if (empty.match(beresp.http.foo)) {
 			set beresp.http.bar = "YYY";
-		}
-		if (re.match_dyn(beresp.http.bar, "$")) {
-			set beresp.http.food = "XXX";
-		}
-		if (re.match_dyn(beresp.http.foo, "")) {
-			set beresp.http.bard = "YYY";
 		}
 	}
 } -start
@@ -30,6 +29,4 @@ client c1 {
 	expect resp.http.content-length == 6
 	expect resp.http.foo == "XXX"
 	expect resp.http.bar == "YYY"
-	expect resp.http.food == "XXX"
-	expect resp.http.bard == "YYY"
 } -run

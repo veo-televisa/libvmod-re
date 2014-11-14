@@ -8,12 +8,13 @@ server s1 {
 varnish v1 -vcl+backend {
 	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
 
-	sub vcl_fetch {
-		if (re.match(beresp.http.foo, "(")) {
+	sub vcl_init {
+	        new paren = re.regex("(");
+	}
+
+	sub vcl_backend_response {
+		if (paren.match(beresp.http.foo)) {
 			set beresp.http.foo = "baz";
-		}
-		if (re.match_dyn(beresp.http.baz, "(")) {
-			set beresp.http.baz = "waldo";
 		}
 	}
 } -start

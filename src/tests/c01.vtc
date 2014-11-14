@@ -9,48 +9,58 @@ server s1 {
 varnish v1 -vcl+backend {
 	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
 
-	sub vcl_fetch {
-		if (re.match(beresp.http.foo, "(bar)(baz)")) {
-			set beresp.http.foo0 = re.backref(0, "error0");
-			set beresp.http.foo1 = re.backref(1, "error1");
-			set beresp.http.foo2 = re.backref(2, "error2");
-			set beresp.http.foo3 = re.backref(3, "foofallback");
+	sub vcl_init {
+		new barbaz = re.regex("(bar)(baz)");
+		new bazplus = re.regex("(baz)(.+)");
+		new fourdots = re.regex("(.)(.)(.)(.)");
+		new frobnitz = re.regex("(frob)(nitz)");
+	}
+
+	sub vcl_backend_response {
+		if (barbaz.match(beresp.http.foo)) {
+			set beresp.http.foo0 = barbaz.backref(0, "error0");
+			set beresp.http.foo1 = barbaz.backref(1, "error1");
+			set beresp.http.foo2 = barbaz.backref(2, "error2");
+			set beresp.http.foo3 = barbaz.backref(3, "foofallback");
 		} else {
-			error 999;
+			set beresp.status = 999;
 		}
 
-		if (re.match(beresp.http.bar, "(baz)(.+)")) {
-			set beresp.http.bar0 = re.backref(0, "error0");
-			set beresp.http.bar1 = re.backref(1, "error1");
-			set beresp.http.bar2 = re.backref(2, "error2");
-			set beresp.http.bar3 = re.backref(3, "barfallback");
+		if (bazplus.match(beresp.http.bar)) {
+			set beresp.http.bar0 = bazplus.backref(0, "error0");
+			set beresp.http.bar1 = bazplus.backref(1, "error1");
+			set beresp.http.bar2 = bazplus.backref(2, "error2");
+			set beresp.http.bar3 = bazplus.backref(3, "barfallback");
 		} else {
-			error 999;
+		        set beresp.status = 999;
 		}
 
-		if (re.match(beresp.http.barf, "(.)(.)(.)(.)")) {
+
+		if (barbaz.match(beresp.http.foo)
+		    && bazplus.match(beresp.http.bar)) {
+			set beresp.http.foo20 = barbaz.backref(0, "error0");
+			set beresp.http.foo21 = barbaz.backref(1, "error1");
+			set beresp.http.foo22 = barbaz.backref(2, "error2");
+			set beresp.http.foo23 = barbaz.backref(3, "foofallback");
+			set beresp.http.bar20 = bazplus.backref(0, "error0");
+			set beresp.http.bar21 = bazplus.backref(1, "error1");
+			set beresp.http.bar22 = bazplus.backref(2, "error2");
+			set beresp.http.bar23 = bazplus.backref(3, "barfallback");
+		} else {
+			set beresp.status = 999;
+		}
+
+		if (fourdots.match(beresp.http.barf)) {
 			set beresp.http.frap
-			    = "_" + re.backref(0, "error0") + "_"
-			      + re.backref(5, "")
-			      + re.backref(4, "error4")
-			      + re.backref(3, "error3")
-			      + re.backref(2, "error2") + "p_";
+			    = "_" + fourdots.backref(0, "error0") + "_"
+			      + fourdots.backref(5, "")
+			      + fourdots.backref(4, "error4")
+			      + fourdots.backref(3, "error3")
+			      + fourdots.backref(2, "error2") + "p_";
 		} else {
-			error 999;
+			set beresp.status = 999;
 		}
 
-		/* does not match */
-		if (re.match(beresp.http.foo, "(frob)(nitz)")) {
-			set beresp.http.frob = "nitz";
-		}
-		/* ... so 0..4 contain contain the previous values */
-		set beresp.http.frob0 = re.backref(0, "fallback0");
-		set beresp.http.frob1 = re.backref(1, "fallback1");
-		set beresp.http.frob2 = re.backref(2, "fallback2");
-		set beresp.http.frob3 = re.backref(3, "fallback3");
-		set beresp.http.frob4 = re.backref(4, "fallback4");
-		set beresp.http.frob5 = re.backref(5, "fallback5");
-		set beresp.http.frob6 = re.backref(5, "fallback6");
 }
 
 } -start
@@ -66,13 +76,13 @@ client c1 {
 	expect resp.http.bar1 == "baz"
 	expect resp.http.bar2 == "quux"
 	expect resp.http.bar3 == "barfallback"
+	expect resp.http.foo20 == "barbaz"
+	expect resp.http.foo21 == "bar"
+	expect resp.http.foo22 == "baz"
+	expect resp.http.foo23 == "foofallback"
+	expect resp.http.bar20 == "bazquux"
+	expect resp.http.bar21 == "baz"
+	expect resp.http.bar22 == "quux"
+	expect resp.http.bar23 == "barfallback"
 	expect resp.http.frap == "_barf_frap_"
-	expect resp.http.frob != "nitz"
-	expect resp.http.frob0 == "barf"
-	expect resp.http.frob1 == "b"
-	expect resp.http.frob2 == "a"
-	expect resp.http.frob3 == "r"
-	expect resp.http.frob4 == "f"
-	expect resp.http.frob5 == "fallback5"
-	expect resp.http.frob6 == "fallback6"
 } -run

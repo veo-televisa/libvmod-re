@@ -1,48 +1,24 @@
-varnishtest "limit to backrefs 0 to 10"
+varnishtest "non-capturing parentheses"
 
 server s1 {
 	rxreq
-	txresp -hdr "Foo: 12345678901" -hdr "Bar: 123456789012" -body "1111\n"
+	txresp -hdr "Foo: barbaz" -body "1111\n"
 } -start
 
 varnish v1 -vcl+backend {
 	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
 
-	sub vcl_fetch {
-		if (re.match(beresp.http.foo, "(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)")
-	           ) {
-			set beresp.http.foo0 = re.backref(0, "error0");
-			set beresp.http.foo1 = re.backref(1, "error1");
-			set beresp.http.foo2 = re.backref(2, "error2");
-			set beresp.http.foo3 = re.backref(3, "error3");
-			set beresp.http.foo4 = re.backref(4, "error4");
-			set beresp.http.foo5 = re.backref(5, "error5");
-			set beresp.http.foo6 = re.backref(6, "error6");
-			set beresp.http.foo7 = re.backref(7, "error7");
-			set beresp.http.foo8 = re.backref(8, "error8");
-			set beresp.http.foo9 = re.backref(9, "error9");
-			set beresp.http.foo10 = re.backref(10, "error10");
-			set beresp.http.foo11 = re.backref(11, "fallback");
+	sub vcl_init {
+	       new barbaz = re.regex("(?:bar)(baz)");
+	}
+
+	sub vcl_backend_response {
+		if (barbaz.match(beresp.http.foo)) {
+			set beresp.http.foo0 = barbaz.backref(0, "error0");
+			set beresp.http.foo1 = barbaz.backref(1, "error1");
+			set beresp.http.foo2 = barbaz.backref(2, "fallback");
 		} else {
-			error 999;
-		}
-		if (re.match(beresp.http.bar,
-		             "(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)")
-	           ) {
-			set beresp.http.bar0 = re.backref(0, "error0");
-			set beresp.http.bar1 = re.backref(1, "error1");
-			set beresp.http.bar2 = re.backref(2, "error2");
-			set beresp.http.bar3 = re.backref(3, "error3");
-			set beresp.http.bar4 = re.backref(4, "error4");
-			set beresp.http.bar5 = re.backref(5, "error5");
-			set beresp.http.bar6 = re.backref(6, "error6");
-			set beresp.http.bar7 = re.backref(7, "error7");
-			set beresp.http.bar8 = re.backref(8, "error8");
-			set beresp.http.bar9 = re.backref(9, "error9");
-			set beresp.http.bar10 = re.backref(10, "error10");
-			set beresp.http.bar11 = re.backref(11, "error11");
-		} else {
-			error 999;
+			set beresp.status = 999;
 		}
 	}
 
@@ -51,28 +27,7 @@ varnish v1 -vcl+backend {
 client c1 {
 	txreq
 	rxresp
-	expect resp.http.foo0 == "1234567890"
-	expect resp.http.foo1 == "1"
-	expect resp.http.foo2 == "2"
-	expect resp.http.foo3 == "3"
-	expect resp.http.foo4 == "4"
-	expect resp.http.foo5 == "5"
-	expect resp.http.foo6 == "6"
-	expect resp.http.foo7 == "7"
-	expect resp.http.foo8 == "8"
-	expect resp.http.foo9 == "9"
-	expect resp.http.foo10 == "0"
-	expect resp.http.foo11 == "fallback"
-	expect resp.http.bar0 == "error0"
-	expect resp.http.bar1 == "error1"
-	expect resp.http.bar2 == "error2"
-	expect resp.http.bar3 == "error3"
-	expect resp.http.bar4 == "error4"
-	expect resp.http.bar5 == "error5"
-	expect resp.http.bar6 == "error6"
-	expect resp.http.bar7 == "error7"
-	expect resp.http.bar8 == "error8"
-	expect resp.http.bar9 == "error9"
-	expect resp.http.bar10 == "error10"
-	expect resp.http.bar11 == "error11"
+	expect resp.http.foo0 == "barbaz"
+	expect resp.http.foo1 == "baz"
+	expect resp.http.foo2 == "fallback"
 } -run

@@ -31,16 +31,14 @@
 
 #include <stdlib.h>
 #include <pthread.h>
-#include <sys/resource.h>
 
 #include "pcre.h"
 
 #include "vre.h"
 #include "vrt.h"
-#include "bin/varnishd/cache.h"
+#include "cache/cache.h"
 #include "vas.h"
 #include "miniobj.h"
-#include "vmb.h"
 
 #include "vcc_if.h"
 
@@ -51,338 +49,212 @@
  * third of the vector is used as workspace by pcre_exec() while matching
  * capturing subpatterns, and is not available for passing back
  * information.
+ *
+ * XXX: if vre were to expose the pcre and pcre_extra objects, then we
+ * could use pcre_fullinfo() to determine the highest backref for each
+ * regex, and wouldn't need this arbitrary limit ...
  */
-
 #define MAX_MATCHES	11
 #define MAX_OV		((MAX_MATCHES) * 3)
 #define MAX_OV_USED	((MAX_MATCHES) * 2)
 
-/* 
- * XXX we don't need the re_t obj at the moment, should
- * we keep it ?
- */
-typedef struct re_t {
+struct vmod_re_regex {
 	unsigned	magic;
-#define RE_MAGIC 0xd361bdcb	
+#define VMOD_RE_REGEX_MAGIC 0x955706ee
 	vre_t		*vre;
-} re_t;
+	pthread_key_t	ovk;
+	int		erroffset;
+	const char	*error;
+};
 
-typedef struct sess_ov {
+typedef struct ov_s {
 	unsigned	magic;
-#define SESS_OV_MAGIC 0x844bfa39
+#define OV_MAGIC 0x844bfa39
 	const char	*subject;
 	int		ovector[MAX_OV_USED];
 	int		count;
-	unsigned	xid;
-	void		*ws;
-} sess_ov;
+} ov_t;
 
-struct sess_tbl {
-	unsigned	magic;
-#define SESS_TBL_MAGIC 0x0cd0c7ca
-	int		nsess;
-	sess_ov		**sess;
-};
+static char c;
+static const void *match_failed = (void *) &c;
 
-/*
- * cf. libvmod_header: a single, global lock that prevents two threads
- * from compiling regexen at the same time
- */
-pthread_mutex_t re_mutex;
-
-static void
-free_re(void *priv)
+int __match_proto__()
+vmod_re_init(struct vmod_priv *priv __attribute__((unused)),
+	     const struct VCL_conf *vcl __attribute__((unused)))
 {
-	struct re_t *re;
-	
-	CAST_OBJ_NOTNULL(re, priv, RE_MAGIC);
+	return 0;
+}
+
+VCL_VOID __match_proto__()
+vmod_regex__init(const struct vrt_ctx *ctx, struct vmod_re_regex **rep,
+		 const char *vcl_name, VCL_STRING pattern)
+{
+	struct vmod_re_regex *re;
+
+	CHECK_OBJ_NOTNULL(ctx, VRT_CTX_MAGIC);
+#if 0
+	AN(ctx->vsl); /* XXX: ctx->vsl is NULL?! */
+#endif
+	AN(rep);
+	AZ(*rep);
+	AN(vcl_name);
+	AN(pattern);
+	ALLOC_OBJ(re, VMOD_RE_REGEX_MAGIC);
+	AN(re);
+	*rep = re;
+
+	AZ(pthread_key_create(&re->ovk, free));
+	re->erroffset = 0;
+	re->error = NULL;
+
+	re->vre = VRE_compile(pattern, 0, &re->error, &re->erroffset);
+#if 0
+	if (re->vre == NULL)
+		VSLb(ctx->vsl, SLT_VCL_Error,
+		     "vmod re: error compiling regex \"%s\" in VCL \"%s\": "
+		     "%s (position %d)", pattern, vcl_name, error, erroffset);
+#endif
+}
+
+VCL_VOID __match_proto__()
+vmod_regex__fini(struct vmod_re_regex **rep)
+{
+	struct vmod_re_regex *re;
+
+	re = *rep;
+	*rep = NULL;
+	CHECK_OBJ_NOTNULL(re, VMOD_RE_REGEX_MAGIC);
 	if (re->vre != NULL)
 		VRE_free(&re->vre);
 	FREE_OBJ(re);
 }
 
-static void
-free_sess_tbl(void *priv)
+VCL_BOOL __match_proto__()
+vmod_regex_match(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
+		 VCL_STRING subject)
 {
-	struct sess_tbl *tbl;
-
-	CAST_OBJ_NOTNULL(tbl, priv, SESS_TBL_MAGIC);
-	for (int i = 0; i < tbl->nsess; i++)
-		if (tbl->sess[i] != NULL)
-			FREE_OBJ(tbl->sess[i]);
-	free(tbl->sess);
-	FREE_OBJ(tbl);
-}
-
-static inline void 
-init_ov(struct sess_ov *ov, struct sess *sp)
-{
-	ov->subject = NULL;
-	ov->count = -1;
-	ov->xid = sp->xid;
-	ov->ws = sp->ws;
-}
-
-static inline sess_ov *
-get_ov(struct sess *sp, struct vmod_priv *priv_vcl, const int init)
-{
-	struct sess_tbl *tbl;
-	struct sess_ov *ov;
-
-	CHECK_OBJ_NOTNULL(sp, SESS_MAGIC);
-	AN(priv_vcl);
-
-	CAST_OBJ_NOTNULL(tbl, priv_vcl->priv, SESS_TBL_MAGIC);
-	assert(sp->id < tbl->nsess);
-	assert(sp->id >= 0);
-	if (tbl->sess[sp->id] == NULL) {
-		if (init == 0)
-			return NULL;
-
-		ALLOC_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
-		XXXAN(tbl->sess[sp->id]);
-
-		init_ov(tbl->sess[sp->id], sp);
-
-		return (tbl->sess[sp->id]);
-	}
-
-	CHECK_OBJ(tbl->sess[sp->id], SESS_OV_MAGIC);
-	ov = tbl->sess[sp->id];
-
-	/*
-	 * we need to make sure that we do not back-ref matches from a
-	 * previous session on the same sp->id, so check the xid and the
-	 * worker ws just in case we have non-unique xids (some versions
-	 * of varnish3)
-	 */
-
-	if ((ov->xid != sp->xid) || (ov->ws != sp->ws)) {
-		if (init == 0)
-			return NULL;
-		else
-			init_ov(ov, sp);
-	}
-
-	return (ov);
-}
-
-/*
- * Set up a table of ov structures for each session, large enough to fit
- * max_open_files.
- */
-int __match_proto__()
-re_init(struct vmod_priv *priv,
-        const struct VCL_conf *vcl_conf __attribute__((unused)))
-{
-	struct sess_tbl	*tbl;
-	struct rlimit nfd;
-
-	AN(priv);
-	
-	AZ(pthread_mutex_init(&re_mutex, NULL));
-
-	AZ(getrlimit(RLIMIT_NOFILE, &nfd));
-
-#ifndef DISABLE_MAXFD_TEST
-	struct rlimit rltest;
-	rltest.rlim_cur = nfd.rlim_cur;
-	rltest.rlim_max = nfd.rlim_max + 1;
-	AN(setrlimit(RLIMIT_NOFILE, &rltest));
-	assert(errno == EPERM);
-#endif
-
-	ALLOC_OBJ(tbl, SESS_TBL_MAGIC);
-	XXXAN(tbl);
-	tbl->nsess = nfd.rlim_max;
-
-	tbl->sess = calloc(tbl->nsess, sizeof(sess_ov *));
-	XXXAN(tbl->sess);
-
-	priv->priv = tbl;
-	priv->free = free_sess_tbl;
-	return (0);
-}
-
-static inline unsigned
-match(struct sess *sp, struct vmod_priv *priv_vcl, struct vmod_priv *priv_call,
-      const char *str, const char *pattern, int dynamic)
-{
-	vre_t *vre;
-	sess_ov *ov;
+	ov_t *ov;
 	int s, nov[MAX_OV];
-	unsigned result;
+	char *snap;
 	size_t cp;
 
-	AN(pattern);
+	CHECK_OBJ_NOTNULL(ctx, VRT_CTX_MAGIC);
+	CHECK_OBJ_NOTNULL(re, VMOD_RE_REGEX_MAGIC);
 
-	/* a null pattern always matches */
-	if (pattern == '\0')
-		return 1;
-	
-	if (dynamic) {
-		/*
-		 * should we cache here?
-		 *
-		 * if we wanted to use priv_call, we would need to run the
-		 * match under the lock or would need refcounting with
-		 * delayed free.
-		 *
-		 * A real LRU/MFU pattern -> vre cache probably would be a
-		 * better idea
-		 *
-		 * also, as long as we don't cache, we will always
-		 * recompile a bad re
-		 */
-		int erroffset = 0;
-		const char *error = NULL;
-
-		vre = VRE_compile(pattern, 0, &error, &erroffset);
-		if (vre == NULL)
-			WSP(sp, SLT_VCL_error,
-			    "vmod re: error compiling dynamic regex \"%s\": "
-			    "%s (position %d)", pattern, error,
-			    erroffset);
-	}
-	else if (priv_call->priv) {
-		re_t *re;
-
-		CAST_OBJ(re, priv_call->priv, RE_MAGIC);
-		vre = re->vre;
-	}
-	else {
-		re_t *re;
-		int erroffset = 0;
-		const char *error = NULL;
-
-		AZ(pthread_mutex_lock(&re_mutex));
-		/* re-check under the lock */
-		if (priv_call->priv) {
-			CAST_OBJ(re, priv_call->priv, RE_MAGIC);
-			vre = re->vre;
-		}
-		else {
-			ALLOC_OBJ(re, RE_MAGIC);
-			XXXAN(re);
-			
-			vre = VRE_compile(pattern, 0, &error, &erroffset);
-			if (vre == NULL)
-				WSP(sp, SLT_VCL_error,
-				    "vmod re: error compiling regex \"%s\": "
-				    "%s (position %d)", pattern, error,
-				    erroffset);
-			re->vre = vre;
-			/*
-			 * make sure the re obj is complete before we commit
-			 * the pointer
-			 */
-			VMB();
-			priv_call->priv = re;
-			priv_call->free = free_re;
-		}
-		AZ(pthread_mutex_unlock(&re_mutex));
-	}
-		
+	AZ(pthread_setspecific(re->ovk, match_failed));
 
 	/* compilation error */
-	if (vre == NULL)
+	if (re->vre == NULL) {
+		AN(re->error);
+		VSLb(ctx->vsl, SLT_VCL_Error,
+		     "vmod re: error compiling regex: %s (position %d)",
+		     re->error, re->erroffset);
 		return 0;
-
-	/* get the ov only once we actually have a vre */
-	ov = get_ov(sp, priv_vcl, 1);
-	AN(ov);
-
-	/* 
-	 * we must not touch the ov unless we have a successful match, so
-	 * vmod_backref will always reference the last successful match
-	 */
-
-	if (str == NULL)
-		str = "";
-
-	assert(sizeof(nov) == (sizeof(nov[0]) * MAX_OV));
-
-	s = VRE_exec(vre, str, strlen(str), 0, 0, nov,
-		     MAX_OV, &params->vre_limits);
-
-	if (s > VRE_ERROR_NOMATCH) {
-		if (s == 0)
-			cp = sizeof(nov);	/* ov overflow */
-		else
-			cp = s * 2 * sizeof(*nov);
-
-		assert(cp <= sizeof(nov));
-
-		ov->subject = str;
-		memcpy(ov->ovector, nov, cp);
-		ov->count = s;
-		result = 1;
 	}
-	else {
+
+	if (subject == NULL)
+		subject = "";
+
+	/* XXX: cache_param->vre_limits incorrect?! */
+	s = VRE_exec(re->vre, subject, strlen(subject), 0, 0, nov, MAX_OV,
+		     NULL);
+#if 0
+		     &cache_param->vre_limits);
+#endif
+	if (s <= VRE_ERROR_NOMATCH) {
 		if (s < VRE_ERROR_NOMATCH)
-			WSP(sp, SLT_VCL_error,
-			    "vmod re: regex match returned %d", s);
-		result = 0;
+			VSLb(ctx->vsl, SLT_VCL_Error,
+			     "vmod re: regex match returned %d", s);
+		return 0;
+	}
+	if (s == 0) {
+		VSLb(ctx->vsl, SLT_VCL_Error,
+	     	     "vmod re: capturing substrings exceed max %d",
+		     MAX_MATCHES - 1);
+		s = MAX_MATCHES;
 	}
 
-	if (dynamic)
-		VRE_free(&vre);
-	return result;
+	snap = WS_Snapshot(ctx->ws);
+	ov = (ov_t *) WS_Alloc(ctx->ws, sizeof(ov_t));
+	if (ov == NULL) {
+		VSLb(ctx->vsl, SLT_VCL_Error,
+		     "vmod re: insufficient workspace");
+		return 0;
+	}
+	ov->subject = WS_Copy(ctx->ws, (const void *) subject, -1);
+	if (ov->subject == NULL) {
+		WS_Reset(ctx->ws, snap);
+		VSLb(ctx->vsl, SLT_VCL_Error,
+		     "vmod re: insufficient workspace");
+		return 0;
+	}
+	ov->magic = OV_MAGIC;
+	ov->count = s;
+	cp = s * 2 * sizeof(*nov);
+	assert(cp <= sizeof(nov));
+	memcpy(ov->ovector, nov, cp);
+	AZ(pthread_setspecific(re->ovk, (const void *) ov));
+	return 1;
 }
 
-unsigned __match_proto__()
-vmod_match(struct sess *sp, struct vmod_priv *priv_vcl,
-           struct vmod_priv *priv_call, const char *str, const char *pattern)
+VCL_STRING __match_proto__()
+vmod_regex_backref(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
+		   VCL_INT refnum, VCL_STRING fallback)
 {
-	return(match(sp, priv_vcl, priv_call, str, pattern, 0));
-}
-
-unsigned __match_proto__()
-vmod_match_dyn(struct sess *sp, struct vmod_priv *priv_vcl,
-           struct vmod_priv *priv_call, const char *str, const char *pattern)
-{
-	return(match(sp, priv_vcl, priv_call, str, pattern, 1));
-}
-
-const char * __match_proto__()
-vmod_backref(struct sess *sp, struct vmod_priv *priv_vcl, int refnum,
-             const char *fallback)
-{
-	struct sess_ov *ov;
+	ov_t *ov;
 	char *substr;
 	unsigned l;
 	int s;
 
-	CHECK_OBJ_NOTNULL(sp, SESS_MAGIC);
+	CHECK_OBJ_NOTNULL(ctx, VRT_CTX_MAGIC);
+	CHECK_OBJ_NOTNULL(re, VMOD_RE_REGEX_MAGIC);
 	AN(fallback);
+	assert(refnum >= 0);
 
-	ov = get_ov(sp, priv_vcl, 0);
-
-	if ((ov == NULL) || (ov->count < 0)) {
-		WSP(sp, SLT_VCL_error,
-		    "vmod re: backref called without prior match in the "
-		    "session");
+	if (refnum >= MAX_MATCHES) {
+		VSLb(ctx->vsl, SLT_VCL_Error,
+		     "vmod re: backref %ld out of range", refnum);
 		return fallback;
 	}
-	
-	AN(ov->subject);
 
-	l = WS_Reserve(sp->ws, 0);
-	substr = sp->ws->f;
+	ov = (ov_t *) pthread_getspecific(re->ovk);
+	if (ov == NULL) {
+		VSLb(ctx->vsl, SLT_VCL_Error,
+		     "vmod re: backref called without prior match");
+		return fallback;
+	}
+	if ((void *) ov == match_failed)
+		return fallback;
+
+	CHECK_OBJ(ov, OV_MAGIC);
+	assert((char *)ov >= ctx->ws->s && (char *)ov < ctx->ws->e);
+	AN(ov->subject);
+	assert(ov->subject >= ctx->ws->s && ov->subject < ctx->ws->e);
+	assert(ov->count > 0 && ov->count <= MAX_MATCHES);
+
+	if (refnum >= ov->count)
+		return fallback;
+
+	l = WS_Reserve(ctx->ws, 0);
+	substr = ctx->ws->f;
 
 	s = pcre_copy_substring(ov->subject, ov->ovector, ov->count, refnum,
 	                        substr, l);
 	if (s < 0) {
-		WSP(sp, SLT_VCL_error, "vmod re: backref returned %d", s);
-		WS_Release(sp->ws, 0);
+		VSLb(ctx->vsl, SLT_VCL_Error,
+		     "vmod re: backref returned %d", s);
+		WS_Release(ctx->ws, 0);
 		return fallback;
 	}
-	WS_Release(sp->ws, s + 1);
+	if (s + 1 > l)
+		VSLb(ctx->vsl, SLT_VCL_Error, "vmod re: insufficient workspace,"
+		     " backref string truncated");
+	WS_Release(ctx->ws, s + 1);
 	return substr;
 }
 
-const char * __match_proto__()
-vmod_version(struct sess *sp __attribute__((unused)))
+VCL_STRING __match_proto__()
+vmod_version(const struct vrt_ctx *ctx __attribute__((unused)))
 {
 	return VERSION;
 }

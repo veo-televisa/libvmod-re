@@ -1,6 +1,274 @@
-Module re
-Init re_init
-Function BOOL match(PRIV_VCL, PRIV_CALL, STRING, STRING)
-Function BOOL match_dyn(PRIV_VCL, PRIV_CALL, STRING, STRING)
-Function STRING backref(PRIV_VCL, INT, STRING)
-Function STRING version()
+#-
+# Copyright (c) 2014 UPLEX Nils Goroll Systemoptimierung
+# All rights reserved
+#
+# Authors: Geoffrey Simmons <geoffrey.simmons@uplex.de>
+#	   Nils Goroll <nils.goroll@uplex.de>
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED.  IN NO EVENT SHALL AUTHOR OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+#
+
+$Module re 3 Varnish Module for Regular Expression Matching with Subexpression Capture
+
+DESCRIPTION
+===========
+
+Varnish Module (VMOD) for matching strings against regular expressions,
+and for extracting captured substrings after matches.
+
+Regular expression matching as implemented by the VMOD is equivalent
+to VCL's infix operator ``~``. The VMOD is motivated by the fact that
+backreference capture in standard VCL requires verbose and suboptimal
+use of the ``regsub`` or ``regsuball`` functions. For example, this
+common idiom in VCL captures a string of digits following the
+substring ``"bar"`` from one request header into another::
+
+	sub vcl_recv {
+		if (req.http.Foo ~ "bar\d+")) {
+		   set req.http.Baz = regsub(req.http.Foo,
+                                             "^.*bar(\d+).*$", "\1");
+
+		}
+	}
+
+It requires two regex executions when a match is found, the second one
+less efficient than the first (since it must match the entire string
+while capturing a substring), and is just cumbersome.
+
+The equivalent solution with the VMOD looks like this::
+
+	import re;
+
+	sub vcl_init {
+		new myregex = re.regex("bar(\d+)");
+	}
+
+	sub vcl_recv {
+		if (myregex.match(req.http.Foo)) {
+		   set req.http.Baz = myregex.backref(1, "");
+		}
+	}
+
+The object is created at VCL initialization with the regex containing
+the capture expression, only describing the substring to be
+matched. When a match with the ``match`` method succeeds, then a
+captured string can be obtained from the ``backref`` method.
+
+XXX: dynamic matches not yet implemented in this version
+
+$Object regex(STRING)
+
+Prototype
+	new OBJ = re.regex(STRING)
+
+Description
+	Create a regex object with the given regular expression. The
+	expression is compiled when the constructor is called. It
+	should include any capturing parentheses that will be needed
+	for extracting backreferences.
+
+Example
+	new myregex = re.regex("\bmax-age\s*=\s*(\d+)");
+
+$Method BOOL .match(STRING)
+
+Description
+	Determines whether the given string matches the regex;
+	functionally equivalent to VCL's infix operator ``~``.
+
+Example
+	``if (myregex.match(beresp.http.Surrogate-Control)) { # ...``
+
+$Method STRING .backref(INT, STRING)
+
+Description
+	Extracts the `nth` subexpression of the most recent successful
+	call of the ``match`` method for this object in the same VCL
+	subroutine call, or a fallback string in case the extraction
+	fails.  Backref 0 indicates the entire matched string. Thus
+	this function behaves like the ``\n`` symbols in ``regsub``
+	and ``regsuball``, and the ``$1``, ``$2`` ...  variables in
+	Perl.
+
+	After unsuccessful matches, the ``fallback`` string is returned
+	for any call to ``backref``.
+
+	The VCL infix operators ``~`` and ``!~`` do not affect this
+	function, nor do the functions ``regsub`` or ``regsuball``.
+
+	If ``backref`` is called without any prior call to ``match``
+	for this object in the same VCL context, then an error message
+	is emitted to the Varnish log using the ``VCL_Error`` tag, and
+	the fallback string is returned.
+
+Example
+        ``set beresp.ttl = std.duration(myregex.backref(1, "120"), 120s);``
+
+$Function STRING version()
+
+Description
+        Returns the version string for this vmod.
+
+Example
+        ``set resp.http.X-re-version = re.version();``
+
+INSTALLATION
+============
+
+The installation process is standard for a Varnish 4 VMOD -- build the
+VMOD on a system where an instance of Varnish 4 is installed, and the
+auto-tools will attempt to locate the Varnish instance, and then pull
+in libraries and other support files from there.
+
+This VMOD also requires a development version of the PCRE library for
+the build (commonly in a package called ``pcre-devel`` in most Unix
+distributions). The auto-tools attempt to use ``pcre-config`` to
+determine compiler and linker options for PCRE.
+
+Since the PCRE runtime library is already required for Varnish, the
+VMOD adds no additional requirements for the runtime.
+
+Quick start
+-----------
+
+This sequence should be enough in typical setups:
+
+1. ``./autogen.sh``  (for git-installation)
+2. ``./configure``
+3. ``make``
+4. ``make check`` (regression tests)
+5. ``make install`` (may require root: sudo make install)
+
+Alternative configs
+-------------------
+
+As with Varnish itself, you can set additional flags and macros in the
+``configure`` step, and/or define environment variables to affect the
+build config.
+
+For example, if you are building the VMOD against a Varnish instance
+with a non-standard installation prefix, then set these env variables
+before running ``configure``:
+
+* PREFIX=/path/to/varnish/install/prefix
+* export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
+* export ACLOCAL_PATH=$PREFIX/share/aclocal
+* export PATH=$PREFIX/bin:$PREFIX/sbin:$PATH
+
+If ``pcre-config`` is not on your ``PATH``, call ``configure`` with
+the option ``--with-pcre-config=/path/to/pcre-config``. Alternatively,
+you can specify compiler and linker options for pcre by setting the
+environment variables ``PCRE_CFLAGS`` and ``PCRE_LIBS``, respectively.
+
+``configure`` must locate the ``varnishtest`` and ``varnishd``
+binaries so that ``make check`` can be run. Usually it should be able
+to find them, but if necessary you can set the variables
+``VARNISHTEST`` and/or ``VARNISHD`` with the full paths.
+
+For developers
+--------------
+
+As with Varnish, you can use these ``configure`` options for stricter
+compiling:
+
+* ``--enable-developer-warnings``
+* ``--enable-extra-developer-warnings`` (for GCC 4)
+* ``--enable-werror``
+
+The VMOD must always build successfully with these options enabled.
+
+Also as with Varnish, you can add ``--enable-debugging-symbols``, so
+that the VMOD's symbols are available to debuggers, in core dumps and
+so forth.
+
+
+AUTHORS
+=======
+
+* Geoffrey Simmons <geoff@uplex.de>
+* Nils Goroll <nils.goroll@uplex.de>
+
+UPLEX Nils Goroll Systemoptimierung
+
+HISTORY
+=======
+
+Version 0.1: Initial version, compatible with Varnish 3
+
+Version 0.2: various fixes, last version compatible with Varnish 3
+
+Version 0.3: compatible with Varnish 4
+
+
+LIMITATIONS
+===========
+
+Regular expressions passed into the constructor are compiled at
+run-time, so there are no errors at VCL compile-time for invalid
+expressions. If an expression is invalid, then a ``VCL_error`` message
+is emitted to the Varnish log, and matches always fail.
+
+The VMOD allocates memory for captured subexpressions from Varnish
+workspaces, whose sizes are determined by the runtime parameters
+``workspace_backend``, for calls within the ``vcl_backend_*``
+subroutines, and ``workspace_client``, for the other VCL subs. The
+VMOD copies the string to be matched into the workspace, along with
+some overhead. For typical usage, the default workspace sizes are
+probably enough; but if you are matching against many, long strings in
+each client or backend context, you might need to increase the Varnish
+parameters for workspace sizes. If the VMOD cannot allocate enough
+workspace, then a ``VCL_error`` message is emitted, and both ``match``
+and ``backref`` will fail. (If you're just using the regexen for
+matching and not to capture backrefs, then you might as well just use
+the standard VCL operators ``~`` and ``!~``, and save the workspace.)
+
+``backref`` can extract up to 10 subexpressions, in addition to the
+full expression indicated by backref 0. If the ``match`` operation
+would have resulted in more than 11 captures (10 substrings and the
+full string), then a ``VCL_Error`` message is emitted to the Varnish
+log, and the captures are limited to 11.
+
+XXX: the following paragraph is currently not true, bug is under
+investigation
+
+Regular expression matching is subject to the same limitations that
+hold for standard regexen in VCL, for example as set by the runtime
+parameters ``pcre_match_limit`` and ``pcre_match_limit_recursion``.
+
+
+SEE ALSO
+========
+
+* varnishd(1)
+* vcl(7)
+* pcre(3)
+* http://lassekarstensen.wordpress.com/2013/12/19/converting-a-varnish-3-0-vmod-to-4-0/
+
+COPYRIGHT
+=========
+
+This document is licensed under the same license as the libvmod-re
+project. See LICENSE for details.
+
+* Copyright (c) 2014 UPLEX Nils Goroll Systemoptimierung
+
+$Init vmod_re_init

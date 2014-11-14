@@ -1,0 +1,5 @@
+See src/vmod_re.vcc for the VMOD documentation, including installation
+instructions. The 'make' command converts this file into the manpage
+'vmod_re'.
+
+See LICENSE for license and copyright notices.

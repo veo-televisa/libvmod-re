@@ -11,19 +11,16 @@ server s1 {
 varnish v1 -vcl+backend {
 	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
 
-	sub vcl_fetch {
-		if (re.match(beresp.http.foo, "(bar)(baz)")) {
-			set beresp.http.foo1 = re.backref(1, "error1");
-			set beresp.http.foo2 = re.backref(2, "error2");
-		} else {
-			error 999;
-		}
+	sub vcl_init {
+	        new barbaz = re.regex("(bar)(baz)");
+	}
 
-		if (re.match_dyn(beresp.http.foo, "(bar)(baz)")) {
-			set beresp.http.foo1d = re.backref(1, "error1");
-			set beresp.http.foo2d = re.backref(2, "error2");
+	sub vcl_backend_response {
+		if (barbaz.match(beresp.http.foo)) {
+			set beresp.http.foo1 = barbaz.backref(1, "error1");
+			set beresp.http.foo2 = barbaz.backref(2, "error2");
 		} else {
-			error 999;
+			set beresp.status = 999;
 		}
 	}
 
@@ -34,8 +31,6 @@ client c1 {
 	rxresp
 	expect resp.http.foo1 == "bar"
 	expect resp.http.foo2 == "baz"
-	expect resp.http.foo1d == "bar"
-	expect resp.http.foo2d == "baz"
 }
 
 client c2 {
@@ -43,8 +38,6 @@ client c2 {
 	rxresp
 	expect resp.http.foo1 == "bar"
 	expect resp.http.foo2 == "baz"
-	expect resp.http.foo1d == "bar"
-	expect resp.http.foo2d == "baz"
 }
 
 client c1 -run

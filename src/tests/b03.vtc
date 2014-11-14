@@ -8,13 +8,13 @@ server s1 {
 varnish v1 -vcl+backend {
 	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
 
-	sub vcl_recv {
-	    if (re.match(req.http.host, "^(abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij)")) {
-		error 500 "not ok";
-            }
+	sub vcl_init {
+	    new longregex = re.regex("^(abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij)");
+	}
 
-	    if (re.match_dyn(req.http.host, "^(abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij|abcdefghij)")) {
-		error 500 "not ok";
+	sub vcl_recv {
+	    if (longregex.match(req.http.host)) {
+		return(synth(500, "not ok"));
             }
 	}
 } -start 
