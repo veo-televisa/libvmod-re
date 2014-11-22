@@ -5,27 +5,31 @@ server s1 {
 	txresp -hdr "Foo: baz" -hdr "Bar: baz" -body "foobar"
 	rxreq
 	expect req.url == "/foo"
-	txresp -hdr "Foo: baz" -hdr "Bar: baz" -body "foobar"
+	txresp -hdr "Foo: quux" -hdr "Bar: baz" -body "foobar"
 	rxreq
 	expect req.url == "/bar"
-	txresp -hdr "Foo: baz" -hdr "Bar: quux" -body "foobar"
+	txresp -hdr "Foo: quux" -hdr "Bar: quux" -body "foobar"
 	rxreq
 	expect req.url == "/baz"
-	txresp -hdr "Foo: baz" -hdr "Bar: baz" -body "foobar"
+	txresp -hdr "Foo: baz" -hdr "Bar: quux" -body "foobar"
 } -start
 
 varnish v1 -vcl+backend {
 	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
 
-	sub vcl_fetch {
-		if (re.match(beresp.http.foo, beresp.http.bar)) {
+	sub vcl_init {
+	    	new baz = re.regex("baz");
+	}
+
+	sub vcl_backend_response {
+		if (baz.match(beresp.http.bar)) {
 			set beresp.http.static = "match";
 		}
 		else {
 			set beresp.http.static = "nomatch";
 		}
 
-		if (re.match_dyn(beresp.http.foo, beresp.http.bar)) {
+		if (baz.match_dyn(beresp.http.foo, beresp.http.bar)) {
 			set beresp.http.dynamic = "match";
 		}
 		else {
@@ -44,22 +48,22 @@ client c1 {
 
 	txreq -url "/foo"
 	rxresp
-	expect resp.http.foo == "baz"
+	expect resp.http.foo == "quux"
 	expect resp.http.bar == "baz"
 	expect resp.http.static  == "match"
-	expect resp.http.dynamic == "match"
+	expect resp.http.dynamic == "nomatch"
 
 	txreq -url "/bar"
 	rxresp 
-	expect resp.http.foo == "baz"
+	expect resp.http.foo == "quux"
 	expect resp.http.bar == "quux"
-	expect resp.http.static  == "match"
-	expect resp.http.dynamic == "nomatch"
+	expect resp.http.static  == "nomatch"
+	expect resp.http.dynamic == "match"
 
 	txreq -url "/baz"
 	rxresp 
 	expect resp.http.foo == "baz"
-	expect resp.http.bar == "baz"
-	expect resp.http.static  == "match"
-	expect resp.http.dynamic == "match"
+	expect resp.http.bar == "quux"
+	expect resp.http.static  == "nomatch"
+	expect resp.http.dynamic == "nomatch"
 } -run

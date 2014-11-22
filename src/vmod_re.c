@@ -120,9 +120,9 @@ vmod_regex__fini(struct vmod_re_regex **rep)
 	FREE_OBJ(re);
 }
 
-VCL_BOOL __match_proto__()
-vmod_regex_match(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
-		 VCL_STRING subject)
+static inline VCL_BOOL
+match(const struct vrt_ctx *ctx, struct vmod_re_regex *re, vre_t *vre,
+      VCL_STRING subject)
 {
 	ov_t *ov;
 	int s, nov[MAX_OV];
@@ -132,10 +132,13 @@ vmod_regex_match(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 	CHECK_OBJ_NOTNULL(ctx, VRT_CTX_MAGIC);
 	CHECK_OBJ_NOTNULL(re, VMOD_RE_REGEX_MAGIC);
 
+	if (vre == NULL)
+		vre = re->vre;
+
 	AZ(pthread_setspecific(re->ovk, match_failed));
 
-	/* compilation error */
-	if (re->vre == NULL) {
+	/* compilation error at init time */
+	if (vre == NULL) {
 		AN(re->error);
 		VSLb(ctx->vsl, SLT_VCL_Error,
 		     "vmod re: error compiling regex: %s (position %d)",
@@ -147,7 +150,7 @@ vmod_regex_match(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 		subject = "";
 
 	/* XXX: cache_param->vre_limits incorrect?! */
-	s = VRE_exec(re->vre, subject, strlen(subject), 0, 0, nov, MAX_OV,
+	s = VRE_exec(vre, subject, strlen(subject), 0, 0, nov, MAX_OV,
 		     NULL);
 #if 0
 		     &cache_param->vre_limits);
@@ -186,6 +189,32 @@ vmod_regex_match(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 	memcpy(ov->ovector, nov, cp);
 	AZ(pthread_setspecific(re->ovk, (const void *) ov));
 	return 1;
+}
+
+VCL_BOOL __match_proto__()
+vmod_regex_match(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
+		 VCL_STRING subject)
+{
+	return match(ctx, re, NULL, subject);
+}
+
+VCL_BOOL __match_proto__()
+vmod_regex_match_dyn(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
+		     VCL_STRING pattern, VCL_STRING subject)
+{
+	vre_t *vre;
+	int erroffset;
+	const char *error;
+
+	AN(pattern);
+	vre = VRE_compile(pattern, 0, &error, &erroffset);
+	if (vre == NULL) {
+		VSLb(ctx->vsl, SLT_VCL_Error,
+		     "vmod re: error compiling regex \"%s\": %s (position %d)",
+		     pattern, error, erroffset);
+		return 0;
+	}
+	return match(ctx, re, vre, subject);
 }
 
 VCL_STRING __match_proto__()

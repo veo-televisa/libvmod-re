@@ -52,7 +52,7 @@ substring ``"bar"`` from one request header into another::
 
 It requires two regex executions when a match is found, the second one
 less efficient than the first (since it must match the entire string
-while capturing a substring), and is just cumbersome.
+to be replaced while capturing a substring), and is just cumbersome.
 
 The equivalent solution with the VMOD looks like this::
 
@@ -73,7 +73,35 @@ the capture expression, only describing the substring to be
 matched. When a match with the ``match`` method succeeds, then a
 captured string can be obtained from the ``backref`` method.
 
-XXX: dynamic matches not yet implemented in this version
+The VMOD also supports dynamic regex matching with the ``match_dyn``
+method::
+
+	import re;
+
+	sub vcl_init {
+		new myregex = re.regex("");
+	}
+
+	sub vcl_backend_response {
+		if (myregex.match_dyn(beresp.http.Bar + "(\d+)",
+		                      req.http.Foo)) {
+		   set beresp.http.Baz = myregex.backref(1, "");
+		}
+	}
+
+In ``match_dyn``, the regex in the first argument is compiled when it
+is called, and matched against the string in the second argument; the
+regex provided in ``vcl_init`` is ignored. Subsequent calls to
+``backref`` extract substrings from the matched string.
+
+As with the constructor, the regex argument to ``match_dyn`` should
+contain any capturing expressions needed for calls to ``backref``.
+
+``match_dyn`` makes it possible to construct regexen whose contents
+are not fully known until runtime, but ``match`` is more efficient,
+since it re-uses the compiled expression obtained at VCL
+initialization. So if you are matching against a fixed pattern that
+never changes during the lifetime of VCL, use ``match``.
 
 $Object regex(STRING)
 
@@ -92,33 +120,45 @@ Example
 $Method BOOL .match(STRING)
 
 Description
-	Determines whether the given string matches the regex;
-	functionally equivalent to VCL's infix operator ``~``.
+	Determines whether the given string matches the regex compiled
+	by the constructor; functionally equivalent to VCL's infix
+	operator ``~``.
 
 Example
 	``if (myregex.match(beresp.http.Surrogate-Control)) { # ...``
+
+$Method BOOL .match_dyn(STRING, STRING)
+
+Description
+	Compiles the regular expression given in the first argument,
+	and determines whether it matches the string in the second
+	argument. The regex supplied in the constructor is ignored.
+
+Example
+	``if (myregex.match_dyn(req.http.Foo + "(\d+)",``
+				``beresp.http.Bar)) { # ...``
 
 $Method STRING .backref(INT, STRING)
 
 Description
 	Extracts the `nth` subexpression of the most recent successful
-	call of the ``match`` method for this object in the same VCL
-	subroutine call, or a fallback string in case the extraction
-	fails.  Backref 0 indicates the entire matched string. Thus
-	this function behaves like the ``\n`` symbols in ``regsub``
-	and ``regsuball``, and the ``$1``, ``$2`` ...  variables in
-	Perl.
+	call of the ``match`` or ``match_dyn`` method for this object
+	in the same VCL subroutine call, or a fallback string in case
+	the extraction fails.  Backref 0 indicates the entire matched
+	string. Thus this function behaves like the ``\n`` symbols in
+	``regsub`` and ``regsuball``, and the ``$1``, ``$2`` ...
+	variables in Perl.
 
 	After unsuccessful matches, the ``fallback`` string is returned
 	for any call to ``backref``.
 
 	The VCL infix operators ``~`` and ``!~`` do not affect this
-	function, nor do the functions ``regsub`` or ``regsuball``.
+	method, nor do the functions ``regsub`` or ``regsuball``.
 
 	If ``backref`` is called without any prior call to ``match``
-	for this object in the same VCL context, then an error message
-	is emitted to the Varnish log using the ``VCL_Error`` tag, and
-	the fallback string is returned.
+	or ``match_dyn`` for this object in the same VCL context, then
+	an error message is emitted to the Varnish log using the
+	``VCL_Error`` tag, and the fallback string is returned.
 
 Example
         ``set beresp.ttl = std.duration(myregex.backref(1, "120"), 120s);``
@@ -205,14 +245,17 @@ Version 0.2: various fixes, last version compatible with Varnish 3
 
 Version 0.3: compatible with Varnish 4
 
+Version 0.4: support dynamic matches
+
 
 LIMITATIONS
 ===========
 
-Regular expressions passed into the constructor are compiled at
-run-time, so there are no errors at VCL compile-time for invalid
-expressions. If an expression is invalid, then a ``VCL_error`` message
-is emitted to the Varnish log, and matches always fail.
+Regular expressions passed into the constructor and into ``match_dyn``
+are compiled at run-time, so there are no errors at VCL compile-time
+for invalid expressions. If an expression is invalid, then a
+``VCL_error`` message is emitted to the Varnish log, and matches
+always fail.
 
 The VMOD allocates memory for captured subexpressions from Varnish
 workspaces, whose sizes are determined by the runtime parameters
@@ -223,16 +266,17 @@ some overhead. For typical usage, the default workspace sizes are
 probably enough; but if you are matching against many, long strings in
 each client or backend context, you might need to increase the Varnish
 parameters for workspace sizes. If the VMOD cannot allocate enough
-workspace, then a ``VCL_error`` message is emitted, and both ``match``
-and ``backref`` will fail. (If you're just using the regexen for
-matching and not to capture backrefs, then you might as well just use
-the standard VCL operators ``~`` and ``!~``, and save the workspace.)
+workspace, then a ``VCL_error`` message is emitted, and the match
+methods as well as ``backref`` will fail. (If you're just using the
+regexen for matching and not to capture backrefs, then you might as
+well just use the standard VCL operators ``~`` and ``!~``, and save
+the workspace.)
 
 ``backref`` can extract up to 10 subexpressions, in addition to the
-full expression indicated by backref 0. If the ``match`` operation
-would have resulted in more than 11 captures (10 substrings and the
-full string), then a ``VCL_Error`` message is emitted to the Varnish
-log, and the captures are limited to 11.
+full expression indicated by backref 0. If a ``match`` or
+``match_dyn`` operation would have resulted in more than 11 captures
+(10 substrings and the full string), then a ``VCL_Error`` message is
+emitted to the Varnish log, and the captures are limited to 11.
 
 XXX: the following paragraph is currently not true, bug is under
 investigation

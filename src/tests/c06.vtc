@@ -1,4 +1,6 @@
-varnishtest "limit to backrefs 0 to 10"
+varnishtest "limit to backrefs 0 to 10 with dynamic matches"
+
+# same as c05.vtc with match_dyn()
 
 server s1 {
 	rxreq
@@ -9,12 +11,13 @@ varnish v1 -vcl+backend {
 	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
 
 	sub vcl_init {
-	       new tendots = re.regex("(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)");
-	       new moredots = re.regex("(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)");
+	       new tendots = re.regex("");
+	       new moredots = re.regex("");
 	}
 
 	sub vcl_backend_response {
-		if (tendots.match(beresp.http.foo)) {
+		if (tendots.match_dyn("(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)",
+				      beresp.http.foo)) {
 			set beresp.http.foo0 = tendots.backref(0, "error0");
 			set beresp.http.foo1 = tendots.backref(1, "error1");
 			set beresp.http.foo2 = tendots.backref(2, "error2");
@@ -30,7 +33,8 @@ varnish v1 -vcl+backend {
 		} else {
 			set beresp.status = 999;
 		}
-		if (moredots.match(beresp.http.bar)) {
+		if (moredots.match_dyn("(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)(.)",
+				       beresp.http.bar)) {
 			set beresp.http.bar0 = moredots.backref(0, "error0");
 			set beresp.http.bar1 = moredots.backref(1, "error1");
 			set beresp.http.bar2 = moredots.backref(2, "error2");

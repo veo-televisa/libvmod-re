@@ -1,0 +1,99 @@
+varnishtest "re.backref not affected by standard VCL regex code"
+
+server s1 {
+	rxreq
+	txresp -hdr "Foo: barbaz" -body "1111\n"
+} -start
+
+varnish v1 -vcl+backend {
+	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
+
+	sub vcl_init {
+	    	new barbaz = re.regex("(bar)baz");
+	}
+
+	sub vcl_backend_response {
+	    	if (!barbaz.match(beresp.http.foo)) {
+		        set beresp.status = 999;
+		}
+
+		if (beresp.http.foo ~ "bar(baz)") {
+			set beresp.http.tilde0 = barbaz.backref(0, "tilde0");
+			set beresp.http.tilde1 = barbaz.backref(1, "tilde1");
+		} else {
+			set beresp.status = 999;
+		}
+
+		if (beresp.http.foo !~ "bar(quux)") {
+			set beresp.http.neg0 = barbaz.backref(0, "neg0");
+			set beresp.http.neg1 = barbaz.backref(1, "neg1");
+		} else {
+			set beresp.status = 999;
+		}
+
+		set beresp.http.regsub
+		    = regsub(beresp.http.foo, "bar(baz)", "\1");
+		set beresp.http.regsub0 = barbaz.backref(0, "regsub0");
+		set beresp.http.regsub1 = barbaz.backref(1, "regsub1");
+
+		set beresp.http.regsuball
+		    = regsuball(beresp.http.foo, "(.)", "x");
+		set beresp.http.regsuball0 = barbaz.backref(0, "regsuball0");
+		set beresp.http.regsuball1 = barbaz.backref(1, "regsuball1");
+
+	    	if (!barbaz.match_dyn("(bar)baz", beresp.http.foo)) {
+		        set beresp.status = 999;
+		}
+
+		if (beresp.http.foo ~ "bar(baz)") {
+			set beresp.http.tilde0d = barbaz.backref(0, "tilde0d");
+			set beresp.http.tilde1d = barbaz.backref(1, "tilde1d");
+		} else {
+			set beresp.status = 999;
+		}
+
+		if (beresp.http.foo !~ "bar(quux)") {
+			set beresp.http.neg0d = barbaz.backref(0, "neg0d");
+			set beresp.http.neg1d = barbaz.backref(1, "neg1d");
+		} else {
+			set beresp.status = 999;
+		}
+
+		set beresp.http.regsubd
+		    = regsub(beresp.http.foo, "bar(baz)", "\1");
+		set beresp.http.regsub0d = barbaz.backref(0, "regsub0d");
+		set beresp.http.regsub1d = barbaz.backref(1, "regsub1d");
+
+		set beresp.http.regsuballd
+		    = regsuball(beresp.http.foo, "(.)", "x");
+		set beresp.http.regsuball0d = barbaz.backref(0, "regsuball0d");
+		set beresp.http.regsuball1d = barbaz.backref(1, "regsuball1d");
+	}
+
+} -start
+
+client c1 {
+	txreq
+	rxresp
+	expect resp.status == 200
+	expect resp.http.tilde0 == "barbaz"
+	expect resp.http.tilde1 == "bar"
+	expect resp.http.neg0 == "barbaz"
+	expect resp.http.neg1 == "bar"
+	expect resp.http.regsub == "baz"
+	expect resp.http.regsub0 == "barbaz"
+	expect resp.http.regsub1 == "bar"
+	expect resp.http.regsuball == "xxxxxx"
+	expect resp.http.regsuball0 == "barbaz"
+	expect resp.http.regsuball1 == "bar"
+	expect resp.http.tilde0d == "barbaz"
+	expect resp.http.tilde1d == "bar"
+	expect resp.http.neg0d == "barbaz"
+	expect resp.http.neg1d == "bar"
+	expect resp.http.regsubd == "baz"
+	expect resp.http.regsub0d == "barbaz"
+	expect resp.http.regsub1d == "bar"
+	expect resp.http.regsuballd == "xxxxxx"
+	expect resp.http.regsuball0d == "barbaz"
+	expect resp.http.regsuball1d == "bar"
+} -run

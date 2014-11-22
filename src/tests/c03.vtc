@@ -1,25 +1,59 @@
-varnishtest "non-capturing parentheses"
+varnishtest "backref failure with dynamic matches"
+
+# same as c02.vtc, but with match_dyn()
 
 server s1 {
 	rxreq
-	txresp -hdr "Foo: barbaz" -body "1111\n"
+	txresp -hdr "Foo: barbaz" -hdr "Bar: bazquux" -hdr "Barf: barf" \
+	       -body "1111\n"
 } -start
 
 varnish v1 -vcl+backend {
 	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
 
 	sub vcl_init {
-	       new barbaz = re.regex("(?:bar)(baz)");
+		new frobnitz = re.regex("");
+		new barbaz = re.regex("");
 	}
 
-	sub vcl_backend_response {
-		if (barbaz.match(beresp.http.foo)) {
-			set beresp.http.foo0 = barbaz.backref(0, "error0");
-			set beresp.http.foo1 = barbaz.backref(1, "error1");
-			set beresp.http.foo2 = barbaz.backref(2, "fallback");
-		} else {
-			set beresp.status = 999;
+	sub vcl_deliver {
+	    	set resp.http.nomatch = barbaz.backref(0, "fallback");
+
+		if (frobnitz.match_dyn("(frob)(nitz)", resp.http.foo)) {
+			set resp.http.frob = "nitz";
 		}
+		set resp.http.frob0 = frobnitz.backref(0, "fallback0");
+		set resp.http.frob1 = frobnitz.backref(1, "fallback1");
+		set resp.http.frob2 = frobnitz.backref(2, "fallback2");
+		set resp.http.frob3 = frobnitz.backref(3, "fallback3");
+		set resp.http.frob4 = frobnitz.backref(4, "fallback4");
+		set resp.http.frob5 = frobnitz.backref(5, "fallback5");
+		set resp.http.frob6 = frobnitz.backref(6, "fallback6");
+		set resp.http.frob7 = frobnitz.backref(7, "fallback7");
+		set resp.http.frob8 = frobnitz.backref(8, "fallback8");
+		set resp.http.frob9 = frobnitz.backref(9, "fallback9");
+		set resp.http.frob10 = frobnitz.backref(10, "fallback10");
+
+		if (barbaz.match_dyn("(bar)(baz)", resp.http.foo)) {
+			set resp.http.foo0 = barbaz.backref(0, "error0");
+			set resp.http.foo1 = barbaz.backref(1, "error1");
+			set resp.http.foo2 = barbaz.backref(2, "error2");
+			set resp.http.foo3 = barbaz.backref(3, "foofallback");
+		}
+		if (barbaz.match_dyn("(bar)(baz)", resp.http.barf)) {
+			set resp.http.puke = "match";
+		}
+		set resp.http.barf0 = barbaz.backref(0, "fallback0");
+		set resp.http.barf1 = barbaz.backref(1, "fallback1");
+		set resp.http.barf2 = barbaz.backref(2, "fallback2");
+		set resp.http.barf3 = barbaz.backref(3, "fallback3");
+		set resp.http.barf4 = barbaz.backref(4, "fallback4");
+		set resp.http.barf5 = barbaz.backref(5, "fallback5");
+		set resp.http.barf6 = barbaz.backref(6, "fallback6");
+		set resp.http.barf7 = barbaz.backref(7, "fallback7");
+		set resp.http.barf8 = barbaz.backref(8, "fallback8");
+		set resp.http.barf9 = barbaz.backref(9, "fallback9");
+		set resp.http.barf10 = barbaz.backref(10, "fallback10");
 	}
 
 } -start
@@ -27,7 +61,40 @@ varnish v1 -vcl+backend {
 client c1 {
 	txreq
 	rxresp
+	expect resp.status == 200
+	expect resp.http.nomatch == "fallback"
+	expect resp.http.frob == <undef>
+	expect resp.http.frob0 == "fallback0"
+	expect resp.http.frob1 == "fallback1"
+	expect resp.http.frob2 == "fallback2"
+	expect resp.http.frob3 == "fallback3"
+	expect resp.http.frob4 == "fallback4"
+	expect resp.http.frob5 == "fallback5"
+	expect resp.http.frob6 == "fallback6"
+	expect resp.http.frob7 == "fallback7"
+	expect resp.http.frob8 == "fallback8"
+	expect resp.http.frob9 == "fallback9"
+	expect resp.http.frob10 == "fallback10"
 	expect resp.http.foo0 == "barbaz"
-	expect resp.http.foo1 == "baz"
-	expect resp.http.foo2 == "fallback"
+	expect resp.http.foo1 == "bar"
+	expect resp.http.foo2 == "baz"
+	expect resp.http.foo3 == "foofallback"
+	expect resp.http.puke == <undef>
+	expect resp.http.barf0 == "fallback0"
+	expect resp.http.barf1 == "fallback1"
+	expect resp.http.barf2 == "fallback2"
+	expect resp.http.barf3 == "fallback3"
+	expect resp.http.barf4 == "fallback4"
+	expect resp.http.barf5 == "fallback5"
+	expect resp.http.barf6 == "fallback6"
+	expect resp.http.barf7 == "fallback7"
+	expect resp.http.barf8 == "fallback8"
+	expect resp.http.barf9 == "fallback9"
+	expect resp.http.barf10 == "fallback10"
+} -run
+
+logexpect l1 -v v1 -d 1 -g vxid -q "VCL_Error" {
+	expect 0 * Begin req
+	expect * = VCL_Error "vmod re: backref called without prior match"
+	expect * = End
 } -run
