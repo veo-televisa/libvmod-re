@@ -32,8 +32,6 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-#include "pcre.h"
-
 #include "vre.h"
 #include "vrt.h"
 #include "cache/cache.h"
@@ -204,7 +202,7 @@ vmod_regex_backref(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 	ov_t *ov;
 	char *substr;
 	unsigned l;
-	int s;
+	size_t len;
 
 	CHECK_OBJ_NOTNULL(ctx, VRT_CTX_MAGIC);
 	CHECK_OBJ_NOTNULL(re, VMOD_RE_REGEX_MAGIC);
@@ -238,18 +236,21 @@ vmod_regex_backref(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 	l = WS_Reserve(ctx->ws, 0);
 	substr = ctx->ws->f;
 
-	s = pcre_copy_substring(ov->subject, ov->ovector, ov->count, refnum,
-	                        substr, l);
-	if (s < 0) {
+	/* cf. pcre_copy_substring */
+	refnum <<= 1;
+	assert(refnum + 1 < MAX_OV_USED);
+	len = ov->ovector[refnum+1] - ov->ovector[refnum];
+	if (len + 1 > l) {
 		VSLb(ctx->vsl, SLT_VCL_Error,
-		     "vmod re: backref returned %d", s);
+		     "vmod re: insufficient workspace");
 		WS_Release(ctx->ws, 0);
 		return fallback;
 	}
-	if (s + 1 > l)
-		VSLb(ctx->vsl, SLT_VCL_Error, "vmod re: insufficient workspace,"
-		     " backref string truncated");
-	WS_Release(ctx->ws, s + 1);
+	assert(len <= strlen(ov->subject + ov->ovector[refnum]) + 1);
+	memcpy(substr, ov->subject + ov->ovector[refnum], len);
+	substr[len] = '\0';
+
+	WS_Release(ctx->ws, len + 1);
 	return substr;
 }
 

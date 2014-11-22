@@ -139,14 +139,6 @@ VMOD on a system where an instance of Varnish 4 is installed, and the
 auto-tools will attempt to locate the Varnish instance, and then pull
 in libraries and other support files from there.
 
-This VMOD also requires a development version of the PCRE library for
-the build (commonly in a package called ``pcre-devel`` in most Unix
-distributions). The auto-tools attempt to use ``pcre-config`` to
-determine compiler and linker options for PCRE.
-
-Since the PCRE runtime library is already required for Varnish, the
-VMOD adds no additional requirements for the runtime.
-
 Quick start
 -----------
 
@@ -173,11 +165,6 @@ before running ``configure``:
 * export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
 * export ACLOCAL_PATH=$PREFIX/share/aclocal
 * export PATH=$PREFIX/bin:$PREFIX/sbin:$PATH
-
-If ``pcre-config`` is not on your ``PATH``, call ``configure`` with
-the option ``--with-pcre-config=/path/to/pcre-config``. Alternatively,
-you can specify compiler and linker options for pcre by setting the
-environment variables ``PCRE_CFLAGS`` and ``PCRE_LIBS``, respectively.
 
 ``configure`` must locate the ``varnishtest`` and ``varnishd``
 binaries so that ``make check`` can be run. Usually it should be able

@@ -1,10 +1,9 @@
-AM_CPPFLAGS = @VMOD_INCLUDES@ @PCRE_CFLAGS@
+AM_CPPFLAGS = @VMOD_INCLUDES@
 
 vmoddir = @VMOD_DIR@
 vmod_LTLIBRARIES = libvmod_re.la
 
 libvmod_re_la_LDFLAGS = -module -export-dynamic -avoid-version
-libvmod_re_la_LIBADD = @PCRE_LIBS@
 libvmod_re_la_SOURCES = \
 	vcc_if.c \
 	vcc_if.h \

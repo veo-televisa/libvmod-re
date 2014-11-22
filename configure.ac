@@ -29,41 +29,10 @@ if test "x$RST2MAN" = "xno"; then
 fi
 AM_CONDITIONAL(HAVE_RST2MAN, [test "x$RST2MAN" != "xno"])
 
-# Check for pkg-config
-PKG_PROG_PKG_CONFIG
-
 # Checks for header files.
 AC_HEADER_STDC
 AC_CHECK_HEADERS([stdlib.h])
 AC_CHECK_HEADERS([pthread.h])
-if test -n $PKG_CONFIG; then
-   PKG_CHECK_MODULES([PCRE], [libpcre])
-else
-   AC_CHECK_PROG(PCRE_CONFIG, pcre-config, pcre-config)
-   AC_ARG_WITH(pcre-config,
-               AS_HELP_STRING([--with-pcre-config=PATH],
-                              [Location of PCRE pcre-config (auto)]),
-               [pcre_config="$withval"],
-               [pcre_config=""])
-
-  if test "x$pcre_config" != "x" ; then
-    AC_MSG_CHECKING(for $pcre_config)
-
-    if test -f $pcre_config ; then
-      PCRE_CONFIG=$pcre_config
-      AC_MSG_RESULT(yes)
-    else
-      AC_MSG_RESULT(no - searching PATH)
-    fi
-  fi
-  if test "x$PCRE_CONFIG" = "x"; then
-    AC_CHECK_PROGS(PCRE_CONFIG, pcre-config)
-  fi
-  PCRE_CFLAGS=`$PCRE_CONFIG --cflags`
-  PCRE_LIBS=`$PCRE_CONFIG --libs`
-fi
-AC_SUBST(PCRE_CFLAGS)
-AC_SUBST(PCRE_LIBS)
 
 # Check for python
 AC_CHECK_PROGS(PYTHON, [python3 python3.1 python3.2 python2.7 python2.6 python2.5 python2 python], [AC_MSG_ERROR([Python is needed to build this vmod, please install python.])])
