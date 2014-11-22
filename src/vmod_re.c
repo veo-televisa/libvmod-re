@@ -192,6 +192,7 @@ VCL_STRING __match_proto__()
 vmod_regex_backref(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 		   VCL_INT refnum, VCL_STRING fallback)
 {
+	void *p;
 	ov_t *ov;
 	char *substr;
 	unsigned l;
@@ -208,18 +209,17 @@ vmod_regex_backref(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 		return fallback;
 	}
 
-	ov = (ov_t *) pthread_getspecific(re->ovk);
-	if (ov == NULL) {
+	p = pthread_getspecific(re->ovk);
+	if (p == NULL) {
 		VSLb(ctx->vsl, SLT_VCL_Error,
 		     "vmod re: backref called without prior match");
 		return fallback;
 	}
-	if ((void *) ov == match_failed)
+	if (p == match_failed)
 		return fallback;
 
-	CHECK_OBJ(ov, OV_MAGIC);
+	CAST_OBJ(ov, p, OV_MAGIC);
 	assert((char *)ov >= ctx->ws->s && (char *)ov < ctx->ws->e);
-	AN(ov->subject);
 	assert(ov->subject >= ctx->ws->s && ov->subject < ctx->ws->e);
 	assert(ov->count > 0 && ov->count <= MAX_MATCHES);
 
@@ -239,7 +239,7 @@ vmod_regex_backref(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 		WS_Release(ctx->ws, 0);
 		return fallback;
 	}
-	assert(len <= strlen(ov->subject + ov->ovector[refnum]) + 1);
+	assert(len <= strlen(ov->subject + ov->ovector[refnum]));
 	memcpy(substr, ov->subject + ov->ovector[refnum], len);
 	substr[len] = '\0';
 
