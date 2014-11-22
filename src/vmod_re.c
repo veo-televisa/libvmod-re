@@ -76,13 +76,6 @@ typedef struct ov_s {
 static char c;
 static const void *match_failed = (void *) &c;
 
-int __match_proto__()
-vmod_re_init(struct vmod_priv *priv __attribute__((unused)),
-	     const struct VCL_conf *vcl __attribute__((unused)))
-{
-	return 0;
-}
-
 VCL_VOID __match_proto__()
 vmod_regex__init(const struct vrt_ctx *ctx, struct vmod_re_regex **rep,
 		 const char *vcl_name, VCL_STRING pattern)

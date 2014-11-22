@@ -257,5 +257,3 @@ This document is licensed under the same license as the libvmod-re
 project. See LICENSE for details.
 
 * Copyright (c) 2014 UPLEX Nils Goroll Systemoptimierung
-
-$Init vmod_re_init
