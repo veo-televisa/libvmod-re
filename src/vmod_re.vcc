@@ -121,9 +121,22 @@ $Method BOOL .failed()
 
 Description
 	Returns true if regex compilation in the constructor failed.
+	NOTE: This method only pertains to compilation in the
+	constructor, not to compilation of a regex in ``match_dyn``.
 
 Example
 	``if (myregex.failed()) { # ...``
+
+$Method STRING .error()
+
+Description
+	Returns an error message if regex compilation in the
+	constructor failed, or the empty string if compilation
+	succedded. Like ``failed`` this only pertains to failures of
+	compilation in the constructor, not in ``match_dyn``.
+
+Example
+	``std.log("myregex failed to compile: " + myregex.error());``
 
 $Method BOOL .match(STRING)
 
@@ -262,8 +275,9 @@ LIMITATIONS
 Regular expressions passed into the constructor and into ``match_dyn``
 are compiled at run-time, so there are no errors at VCL compile-time
 for invalid expressions. If an expression is invalid, then a
-``VCL_error`` message is emitted to the Varnish log, and matches
-always fail.
+``VCL_error`` message is emitted to the Varnish log, matches always
+fail, and errors in the constructor can be inspected with ``failed``
+and ``error``.
 
 The VMOD allocates memory for captured subexpressions from Varnish
 workspaces, whose sizes are determined by the runtime parameters

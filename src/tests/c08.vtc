@@ -15,6 +15,7 @@ varnish v1 -vcl+backend {
 
 	sub vcl_deliver {
 	        set resp.http.paren = paren.failed();
+		set resp.http.error = paren.error();
 
 		/* match fails */
 		if (paren.match(resp.http.foo)) {
@@ -34,8 +35,9 @@ varnish v1 -vcl+backend {
 		set resp.http.paren10 = paren.backref(10, "fallback10");
 
 		if (paren.match_dyn("(bar)", resp.http.foo)) {
-		   # dynamic matches do not affect failed()
+		   # dynamic matches do not affect failed() or error()
 		   set resp.http.parend = paren.failed();
+		   set resp.http.errord = paren.error();
 		}
 
 		/* compilation fails */
@@ -63,6 +65,8 @@ client c1 {
 	rxresp
 	expect resp.status == 200
 	expect resp.http.paren == "true"
+	expect resp.http.error != <undef>
+	expect resp.http.error != ""
 	expect resp.http.match == <undef>
 	expect resp.http.paren0 == "fallback0"
 	expect resp.http.paren1 == "fallback1"
@@ -78,6 +82,8 @@ client c1 {
 
 	expect resp.http.parend == "true"
 	expect resp.http.matchd == <undef>
+	expect resp.http.errord != <undef>
+	expect resp.http.errord != ""
 	expect resp.http.paren0d == "fallback0"
 	expect resp.http.paren1d == "fallback1"
 	expect resp.http.paren2d == "fallback2"

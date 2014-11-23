@@ -115,6 +115,25 @@ vmod_regex_failed(const struct vrt_ctx *ctx, struct vmod_re_regex *re)
 	return (re->error != NULL);
 }
 
+VCL_STRING
+vmod_regex_error(const struct vrt_ctx *ctx, struct vmod_re_regex *re)
+{
+	VCL_STRING error;
+
+	CHECK_OBJ_NOTNULL(re, VMOD_RE_REGEX_MAGIC);
+	if (re->error == NULL)
+		return "";
+
+	error = (VCL_STRING) WS_Printf(ctx->ws, "%s (position %d)", re->error,
+				       re->erroffset);
+	if (error == NULL) {
+		VSLb(ctx->vsl, SLT_VCL_Error,
+		     "vmod re: insufficient workspace for error message");
+		return "insufficient workspace for error message";
+	}
+	return(error);
+}
+
 VCL_VOID
 vmod_regex__fini(struct vmod_re_regex **rep)
 {

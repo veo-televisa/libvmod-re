@@ -46,6 +46,10 @@ varnish v1 -vcl+backend {
 		} else {
 			set beresp.status = 999;
 		}
+
+		set beresp.http.foobarerr = foobar.error();
+		set beresp.http.snafuerr = snafu.error();
+		set beresp.http.barerr = bar.error();
 	}
 
 } -start
@@ -56,4 +60,8 @@ client c1 {
 	expect resp.status == "200"
 	expect resp.http.foo1 == "1"
 	expect resp.http.bar1 == "2"
+
+	expect resp.http.foobarerr == ""
+	expect resp.http.snafuerr == ""
+	expect resp.http.barerr == ""
 } -run

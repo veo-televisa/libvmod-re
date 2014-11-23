@@ -22,6 +22,9 @@ varnish v1 -vcl+backend {
 		if (paren.match(beresp.http.foo)) {
 			set beresp.http.foo = "baz";
 		}
+		else {
+		     set beresp.http.error = paren.error();
+		}
 	}
 } -start
 
@@ -32,6 +35,8 @@ client c1 {
 	expect resp.http.content-length == 6
 	expect resp.http.foo == "bar"
 	expect resp.http.baz == "quux"
+	expect resp.http.error != <undef>
+	expect resp.http.error != ""
 } -run
 
 logexpect l1 -v v1 -d 1 -g vxid -q "VCL_Error" {
