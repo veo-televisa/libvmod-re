@@ -268,6 +268,8 @@ Version 0.3: compatible with Varnish 4
 
 Version 0.4: support dynamic matches
 
+Version 0.5: add the failed() and error() methods
+
 
 LIMITATIONS
 ===========
