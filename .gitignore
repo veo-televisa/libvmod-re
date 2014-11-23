@@ -31,6 +31,8 @@ src/vcc_if.lo
 src/vcc_if.o
 src/vmod_re.lo
 src/vmod_re.o
+src/vmod_re.man.rst
+src/vmod_re.rst
 stamp-h1
 vmod_re.3
 *~
