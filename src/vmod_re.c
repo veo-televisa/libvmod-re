@@ -76,7 +76,7 @@ typedef struct ov_s {
 static char c;
 static const void *match_failed = (void *) &c;
 
-VCL_VOID __match_proto__()
+VCL_VOID
 vmod_regex__init(const struct vrt_ctx *ctx, struct vmod_re_regex **rep,
 		 const char *vcl_name, VCL_STRING pattern)
 {
@@ -107,7 +107,7 @@ vmod_regex__init(const struct vrt_ctx *ctx, struct vmod_re_regex **rep,
 #endif
 }
 
-VCL_VOID __match_proto__()
+VCL_VOID
 vmod_regex__fini(struct vmod_re_regex **rep)
 {
 	struct vmod_re_regex *re;
@@ -191,14 +191,14 @@ match(const struct vrt_ctx *ctx, struct vmod_re_regex *re, vre_t *vre,
 	return 1;
 }
 
-VCL_BOOL __match_proto__()
+VCL_BOOL
 vmod_regex_match(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 		 VCL_STRING subject)
 {
 	return match(ctx, re, NULL, subject);
 }
 
-VCL_BOOL __match_proto__()
+VCL_BOOL
 vmod_regex_match_dyn(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 		     VCL_STRING pattern, VCL_STRING subject)
 {
@@ -217,7 +217,7 @@ vmod_regex_match_dyn(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 	return match(ctx, re, vre, subject);
 }
 
-VCL_STRING __match_proto__()
+VCL_STRING
 vmod_regex_backref(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 		   VCL_INT refnum, VCL_STRING fallback)
 {
@@ -276,7 +276,7 @@ vmod_regex_backref(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 	return substr;
 }
 
-VCL_STRING __match_proto__()
+VCL_STRING
 vmod_version(const struct vrt_ctx *ctx __attribute__((unused)))
 {
 	return VERSION;
