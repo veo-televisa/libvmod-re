@@ -115,7 +115,15 @@ Description
 	for extracting backreferences.
 
 Example
-	new myregex = re.regex("\bmax-age\s*=\s*(\d+)");
+	``new myregex = re.regex("\bmax-age\s*=\s*(\d+)");``
+
+$Method BOOL .failed()
+
+Description
+	Returns true if regex compilation in the constructor failed.
+
+Example
+	``if (myregex.failed()) { # ...``
 
 $Method BOOL .match(STRING)
 

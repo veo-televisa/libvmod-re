@@ -15,6 +15,16 @@ varnish v1 -vcl+backend {
 	}
 
         sub vcl_recv {
+	    	if (foobar.failed()) {
+		   return(synth(999, "foobar failed"));
+		}
+	    	if (snafu.failed()) {
+		   return(synth(999, "snafu failed"));
+		}
+	    	if (bar.failed()) {
+		   return(synth(999, "bar failed"));
+		}
+
                 if (foobar.match(req.url)) {
                         return(pass);
                 } else if (snafu.match(req.url)) {

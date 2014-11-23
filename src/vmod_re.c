@@ -107,6 +107,14 @@ vmod_regex__init(const struct vrt_ctx *ctx, struct vmod_re_regex **rep,
 #endif
 }
 
+VCL_BOOL
+vmod_regex_failed(const struct vrt_ctx *ctx, struct vmod_re_regex *re)
+{
+	(void) ctx;
+	CHECK_OBJ_NOTNULL(re, VMOD_RE_REGEX_MAGIC);
+	return (re->error != NULL);
+}
+
 VCL_VOID
 vmod_regex__fini(struct vmod_re_regex **rep)
 {

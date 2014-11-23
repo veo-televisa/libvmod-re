@@ -1,0 +1,117 @@
+varnishtest "backrefs always fail when compilation failed"
+
+server s1 {
+	rxreq
+	txresp -hdr "Foo: bar" -body "1111\n"
+} -start
+
+varnish v1 -vcl+backend {
+	import re from "${vmod_topbuild}/src/.libs/libvmod_re.so";
+
+	sub vcl_init {
+		new paren = re.regex("(");
+		new parend = re.regex("");
+	}
+
+	sub vcl_deliver {
+	        set resp.http.paren = paren.failed();
+
+		/* match fails */
+		if (paren.match(resp.http.foo)) {
+			set resp.http.match = "success";
+		}
+		/* ... so all backrefs fail */
+		set resp.http.paren0 = paren.backref(0, "fallback0");
+		set resp.http.paren1 = paren.backref(1, "fallback1");
+		set resp.http.paren2 = paren.backref(2, "fallback2");
+		set resp.http.paren3 = paren.backref(3, "fallback3");
+		set resp.http.paren4 = paren.backref(4, "fallback4");
+		set resp.http.paren5 = paren.backref(5, "fallback5");
+		set resp.http.paren6 = paren.backref(6, "fallback6");
+		set resp.http.paren7 = paren.backref(7, "fallback7");
+		set resp.http.paren8 = paren.backref(8, "fallback8");
+		set resp.http.paren9 = paren.backref(9, "fallback9");
+		set resp.http.paren10 = paren.backref(10, "fallback10");
+
+		if (paren.match_dyn("(bar)", resp.http.foo)) {
+		   # dynamic matches do not affect failed()
+		   set resp.http.parend = paren.failed();
+		}
+
+		/* compilation fails */
+		if (parend.match_dyn(")", resp.http.foo)) {
+			set resp.http.matchd = "success";
+		}
+		/* ... so all backrefs fail */
+		set resp.http.paren0d = parend.backref(0, "fallback0");
+		set resp.http.paren1d = parend.backref(1, "fallback1");
+		set resp.http.paren2d = parend.backref(2, "fallback2");
+		set resp.http.paren3d = parend.backref(3, "fallback3");
+		set resp.http.paren4d = parend.backref(4, "fallback4");
+		set resp.http.paren5d = parend.backref(5, "fallback5");
+		set resp.http.paren6d = parend.backref(6, "fallback6");
+		set resp.http.paren7d = parend.backref(7, "fallback7");
+		set resp.http.paren8d = parend.backref(8, "fallback8");
+		set resp.http.paren9d = parend.backref(9, "fallback9");
+		set resp.http.paren10d = parend.backref(10, "fallback10");
+	}
+
+} -start
+
+client c1 {
+	txreq
+	rxresp
+	expect resp.status == 200
+	expect resp.http.paren == "true"
+	expect resp.http.match == <undef>
+	expect resp.http.paren0 == "fallback0"
+	expect resp.http.paren1 == "fallback1"
+	expect resp.http.paren2 == "fallback2"
+	expect resp.http.paren3 == "fallback3"
+	expect resp.http.paren4 == "fallback4"
+	expect resp.http.paren5 == "fallback5"
+	expect resp.http.paren6 == "fallback6"
+	expect resp.http.paren7 == "fallback7"
+	expect resp.http.paren8 == "fallback8"
+	expect resp.http.paren9 == "fallback9"
+	expect resp.http.paren10 == "fallback10"
+
+	expect resp.http.parend == "true"
+	expect resp.http.matchd == <undef>
+	expect resp.http.paren0d == "fallback0"
+	expect resp.http.paren1d == "fallback1"
+	expect resp.http.paren2d == "fallback2"
+	expect resp.http.paren3d == "fallback3"
+	expect resp.http.paren4d == "fallback4"
+	expect resp.http.paren5d == "fallback5"
+	expect resp.http.paren6d == "fallback6"
+	expect resp.http.paren7d == "fallback7"
+	expect resp.http.paren8d == "fallback8"
+	expect resp.http.paren9d == "fallback9"
+	expect resp.http.paren10d == "fallback10"
+} -run
+
+logexpect l1 -v v1 -d 1 -g vxid -q "VCL_Error" {
+	expect 0 * Begin req
+
+	# from match()
+	expect * = VCL_Error "^vmod re: error compiling regex:"
+
+	# from match_dyn()
+	expect * = VCL_Error "^vmod re: error compiling regex"
+
+	# from the backref() calls after match_dyn()
+	expect * = VCL_Error "^vmod re: backref called without prior match$"
+	expect * = VCL_Error "^vmod re: backref called without prior match$"
+	expect * = VCL_Error "^vmod re: backref called without prior match$"
+	expect * = VCL_Error "^vmod re: backref called without prior match$"
+	expect * = VCL_Error "^vmod re: backref called without prior match$"
+	expect * = VCL_Error "^vmod re: backref called without prior match$"
+	expect * = VCL_Error "^vmod re: backref called without prior match$"
+	expect * = VCL_Error "^vmod re: backref called without prior match$"
+	expect * = VCL_Error "^vmod re: backref called without prior match$"
+	expect * = VCL_Error "^vmod re: backref called without prior match$"
+	expect * = VCL_Error "^vmod re: backref called without prior match$"
+
+	expect * = End
+} -run

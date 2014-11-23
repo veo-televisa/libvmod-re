@@ -12,6 +12,12 @@ varnish v1 -vcl+backend {
 	        new paren = re.regex("(");
 	}
 
+	sub vcl_recv {
+	    	if (!paren.failed()) {
+		        return(synth(999, "paren should have failed"));
+		}
+	}
+
 	sub vcl_backend_response {
 		if (paren.match(beresp.http.foo)) {
 			set beresp.http.foo = "baz";
@@ -22,7 +28,14 @@ varnish v1 -vcl+backend {
 client c1 {
 	txreq
 	rxresp 
+	expect resp.status == 200
 	expect resp.http.content-length == 6
 	expect resp.http.foo == "bar"
 	expect resp.http.baz == "quux"
+} -run
+
+logexpect l1 -v v1 -d 1 -g vxid -q "VCL_Error" {
+	expect 0 * Begin req
+	expect * = VCL_Error "vmod re: error compiling regex:"
+	expect * = End
 } -run
