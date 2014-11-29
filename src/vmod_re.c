@@ -70,7 +70,6 @@ typedef struct ov_s {
 #define OV_MAGIC 0x844bfa39
 	const char	*subject;
 	int		ovector[MAX_OV_USED];
-	int		count;
 } ov_t;
 
 static char c;
@@ -210,7 +209,7 @@ match(const struct vrt_ctx *ctx, struct vmod_re_regex *re, vre_t *vre,
 		return 0;
 	}
 	ov->magic = OV_MAGIC;
-	ov->count = s;
+	memset(ov->ovector, -1, sizeof(ov->ovector));
 	cp = s * 2 * sizeof(*nov);
 	assert(cp <= sizeof(nov));
 	memcpy(ov->ovector, nov, cp);
@@ -277,17 +276,16 @@ vmod_regex_backref(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 	CAST_OBJ(ov, p, OV_MAGIC);
 	assert((char *)ov >= ctx->ws->s && (char *)ov < ctx->ws->e);
 	assert(ov->subject >= ctx->ws->s && ov->subject < ctx->ws->e);
-	assert(ov->count > 0 && ov->count <= MAX_MATCHES);
 
-	if (refnum >= ov->count)
+	refnum <<= 1;
+	assert(refnum + 1 < MAX_OV_USED);
+	if (ov->ovector[refnum] == -1)
 		return fallback;
 
 	l = WS_Reserve(ctx->ws, 0);
 	substr = ctx->ws->f;
 
 	/* cf. pcre_copy_substring */
-	refnum <<= 1;
-	assert(refnum + 1 < MAX_OV_USED);
 	len = ov->ovector[refnum+1] - ov->ovector[refnum];
 	if (len + 1 > l) {
 		VSLb(ctx->vsl, SLT_VCL_Error,

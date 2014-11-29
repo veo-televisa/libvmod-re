@@ -12,6 +12,7 @@ varnish v1 -vcl+backend {
 	sub vcl_init {
 		new frobnitz = re.regex("(frob)(nitz)");
 		new barbaz = re.regex("(bar)(baz)");
+		new azbc = re.regex("(a|(z))(bc)");
 	}
 
 	sub vcl_deliver {
@@ -60,6 +61,14 @@ varnish v1 -vcl+backend {
 		set resp.http.barf8 = barbaz.backref(8, "fallback8");
 		set resp.http.barf9 = barbaz.backref(9, "fallback9");
 		set resp.http.barf10 = barbaz.backref(10, "fallback10");
+
+		if (azbc.match("abc")) {
+			set resp.http.abc1 = azbc.backref(1, "error1");
+			set resp.http.abc2 = azbc.backref(2, "none");
+			set resp.http.abc3 = azbc.backref(3, "error3");
+		} else {
+			set resp.http.abc = "fail";
+		}
 	}
 
 } -start
@@ -97,6 +106,10 @@ client c1 {
 	expect resp.http.barf8 == "fallback8"
 	expect resp.http.barf9 == "fallback9"
 	expect resp.http.barf10 == "fallback10"
+	expect resp.http.abc == <undef>
+	expect resp.http.abc1 == "a"
+	expect resp.http.abc2 == "none"
+	expect resp.http.abc3 == "bc"
 } -run
 
 logexpect l1 -v v1 -d 1 -g vxid -q "VCL_Error" {
