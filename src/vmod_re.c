@@ -250,8 +250,7 @@ vmod_regex_backref(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 	void *p;
 	ov_t *ov;
 	char *substr;
-	unsigned l;
-	size_t len;
+	int len;
 
 	CHECK_OBJ_NOTNULL(ctx, VRT_CTX_MAGIC);
 	CHECK_OBJ_NOTNULL(re, VMOD_RE_REGEX_MAGIC);
@@ -282,22 +281,15 @@ vmod_regex_backref(const struct vrt_ctx *ctx, struct vmod_re_regex *re,
 	if (ov->ovector[refnum] == -1)
 		return fallback;
 
-	l = WS_Reserve(ctx->ws, 0);
-	substr = ctx->ws->f;
-
-	/* cf. pcre_copy_substring */
 	len = ov->ovector[refnum+1] - ov->ovector[refnum];
-	if (len + 1 > l) {
+	assert(len <= strlen(ov->subject + ov->ovector[refnum]));
+	substr = WS_Printf(ctx->ws, "%.*s", len,
+			   ov->subject + ov->ovector[refnum]);
+	if (substr == NULL) {
 		VSLb(ctx->vsl, SLT_VCL_Error,
 		     "vmod re: insufficient workspace");
-		WS_Release(ctx->ws, 0);
 		return fallback;
 	}
-	assert(len <= strlen(ov->subject + ov->ovector[refnum]));
-	memcpy(substr, ov->subject + ov->ovector[refnum], len);
-	substr[len] = '\0';
-
-	WS_Release(ctx->ws, len + 1);
 	return substr;
 }
 
