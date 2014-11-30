@@ -270,6 +270,8 @@ Version 0.4: support dynamic matches
 
 Version 0.5: add the failed() and error() methods
 
+Version 0.6: bugfix backrefs for which no string is captured
+
 
 LIMITATIONS
 ===========
