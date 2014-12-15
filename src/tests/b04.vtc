@@ -26,7 +26,7 @@ varnish v1 -vcl+backend {
 client c1 {
 	txreq
 	rxresp 
-	expect resp.http.content-length == 6
+	expect resp.status == 200
 	expect resp.http.foo == "XXX"
 	expect resp.http.bar == "YYY"
 } -run
