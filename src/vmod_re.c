@@ -93,7 +93,7 @@ vmod_regex__init(const struct vrt_ctx *ctx, struct vmod_re_regex **rep,
 	AN(re);
 	*rep = re;
 
-	AZ(pthread_key_create(&re->ovk, free));
+	AZ(pthread_key_create(&re->ovk, NULL));
 	re->erroffset = 0;
 	re->error = NULL;
 
