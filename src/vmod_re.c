@@ -140,6 +140,7 @@ vmod_regex__fini(struct vmod_re_regex **rep)
 
 	re = *rep;
 	*rep = NULL;
+	AZ(pthread_key_delete(re->ovk));
 	CHECK_OBJ_NOTNULL(re, VMOD_RE_REGEX_MAGIC);
 	if (re->vre != NULL)
 		VRE_free(&re->vre);
