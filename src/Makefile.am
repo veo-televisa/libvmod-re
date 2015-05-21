@@ -15,15 +15,15 @@ dist_man_MANS =
 vcc_if.c vcc_if.h: @VMODTOOL@ $(top_srcdir)/src/vmod_re.vcc
 	@VMODTOOL@ $(top_srcdir)/src/vmod_re.vcc
 
-VMOD_TESTS = tests/*.vtc
+VMOD_TESTS = $(top_srcdir)/src/tests/*.vtc
 .PHONY: $(VMOD_TESTS)
 
-tests/*.vtc:
+$(top_srcdir)/src/tests/*.vtc:
 	@VARNISHTEST@ -Dvarnishd=@VARNISHD@ -Dvmod_topbuild=$(abs_top_builddir) $@
 
 check: $(VMOD_TESTS)
 
-vmod_re.3: vmod_re.man.rst
+vmod_re.3: $(top_srcdir)/src/vmod_re.man.rst
 if HAVE_RST2MAN
 	${RST2MAN} vmod_re.man.rst $@
 else
