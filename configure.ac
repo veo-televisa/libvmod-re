@@ -1,7 +1,8 @@
 AC_PREREQ(2.59)
-AC_COPYRIGHT([Copyright (c) 2013-2014 UPLEX Nils Goroll Systemoptimierung])
-AC_INIT([libvmod-re], [0.6])
+AC_COPYRIGHT([Copyright (c) 2013-2015 UPLEX Nils Goroll Systemoptimierung])
+AC_INIT([libvmod-re], [trunk])
 AC_CONFIG_MACRO_DIR([m4])
+m4_ifndef([VARNISH_VMOD_INCLUDES], AC_MSG_ERROR([Need varnish.m4 -- see README.rst]))
 AC_CONFIG_SRCDIR(src/vmod_re.vcc)
 AM_CONFIG_HEADER(config.h)
 
@@ -34,23 +35,39 @@ AC_HEADER_STDC
 AC_CHECK_HEADERS([stdlib.h])
 AC_CHECK_HEADERS([pthread.h])
 
+# backwards compat with older pkg-config
+# - pull in AC_DEFUN from pkg.m4
+m4_ifndef([PKG_CHECK_VAR], [
+# PKG_CHECK_VAR(VARIABLE, MODULE, CONFIG-VARIABLE,
+# [ACTION-IF-FOUND], [ACTION-IF-NOT-FOUND])
+# -------------------------------------------
+# Retrieves the value of the pkg-config variable for the given module.
+AC_DEFUN([PKG_CHECK_VAR],
+[AC_REQUIRE([PKG_PROG_PKG_CONFIG])dnl
+AC_ARG_VAR([$1], [value of $3 for $2, overriding pkg-config])dnl
+
+_PKG_CONFIG([$1], [variable="][$3]["], [$2])
+AS_VAR_COPY([$1], [pkg_cv_][$1])
+
+AS_VAR_IF([$1], [""], [$5], [$4])dnl
+])# PKG_CHECK_VAR
+])
+
+PKG_CHECK_MODULES([libvarnishapi], [varnishapi])
+PKG_CHECK_VAR([LIBVARNISHAPI_DATAROOTDIR], [varnishapi], [datarootdir])
+PKG_CHECK_VAR([LIBVARNISHAPI_BINDIR], [varnishapi], [bindir])
+PKG_CHECK_VAR([LIBVARNISHAPI_SBINDIR], [varnishapi], [sbindir])
+AC_SUBST([LIBVARNISHAPI_DATAROOTDIR])
+
 # Varnish include files tree
 VARNISH_VMOD_INCLUDES
 VARNISH_VMOD_DIR
 VARNISH_VMODTOOL
 
-# Check paths to varnishd and varnishtest
-AC_ARG_VAR([VARNISHTEST], [path to varnishtest (mandatory for make check)])
-AC_ARG_VAR([VARNISHD], [path to varnishd (mandatory for make check)])
-AC_PATH_PROG([VARNISHTEST], [varnishtest])
-AC_PATH_PROG([VARNISHD], [varnishd], [/bin/false],
-             [${PATH}${PATH_SEPARATOR}/usr/local/sbin${PATH_SEPARATOR}/usr/sbin])
-if test "x$VARNISHD" = x; then
-   AC_MSG_FAILURE([Can't locate varnishd])
-fi
-if test "x$VARNISHTEST" = x; then
-   AC_MSG_FAILURE([Can't locate varnishtest])
-fi
+AC_PATH_PROG([VARNISHTEST], [varnishtest], [],
+    [$LIBVARNISHAPI_BINDIR:$LIBVARNISHAPI_SBINDIR:$PATH])
+AC_PATH_PROG([VARNISHD], [varnishd], [],
+    [$LIBVARNISHAPI_SBINDIR:$LIBVARNISHAPI_BINDIR:$PATH])
 
 # This corresponds to FreeBSD's WARNS level 6
 DEVELOPER_CFLAGS="-Wall -Wstrict-prototypes -Wmissing-prototypes -Wpointer-arith -Wreturn-type -Wcast-qual -Wwrite-strings -Wswitch -Wshadow -Wcast-align -Wchar-subscripts -Winline -Wnested-externs -Wredundant-decls -Wformat"

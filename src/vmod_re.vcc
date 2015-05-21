@@ -1,5 +1,5 @@
 #-
-# Copyright (c) 2014 UPLEX Nils Goroll Systemoptimierung
+# Copyright (c) 2015 UPLEX Nils Goroll Systemoptimierung
 # All rights reserved
 #
 # Authors: Geoffrey Simmons <geoffrey.simmons@uplex.de>
@@ -214,23 +214,13 @@ This sequence should be enough in typical setups:
 Alternative configs
 -------------------
 
-As with Varnish itself, you can set additional flags and macros in the
-``configure`` step, and/or define environment variables to affect the
-build config.
+If you have installed Varnish to a non-standard directory, call
+``autogen.sh`` and ``configure`` with ``PKG_CONFIG_PATH`` pointing to
+the appropriate path. For example, when varnishd configure was called
+with ``--prefix=$PREFIX``, use
 
-For example, if you are building the VMOD against a Varnish instance
-with a non-standard installation prefix, then set these env variables
-before running ``configure``:
-
-* PREFIX=/path/to/varnish/install/prefix
-* export PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig
-* export ACLOCAL_PATH=$PREFIX/share/aclocal
-* export PATH=$PREFIX/bin:$PREFIX/sbin:$PATH
-
-``configure`` must locate the ``varnishtest`` and ``varnishd``
-binaries so that ``make check`` can be run. Usually it should be able
-to find them, but if necessary you can set the variables
-``VARNISHTEST`` and/or ``VARNISHD`` with the full paths.
+ PKG_CONFIG_PATH=${PREFIX}/lib/pkgconfig
+ export PKG_CONFIG_PATH
 
 For developers
 --------------
