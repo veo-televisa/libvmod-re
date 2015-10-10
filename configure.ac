@@ -1,6 +1,6 @@
 AC_PREREQ(2.59)
 AC_COPYRIGHT([Copyright (c) 2013-2015 UPLEX Nils Goroll Systemoptimierung])
-AC_INIT([libvmod-re], [trunk])
+AC_INIT([libvmod-re], [1.0])
 AC_CONFIG_MACRO_DIR([m4])
 m4_ifndef([VARNISH_VMOD_INCLUDES], AC_MSG_ERROR([Need varnish.m4 -- see README.rst]))
 AC_CONFIG_SRCDIR(src/vmod_re.vcc)

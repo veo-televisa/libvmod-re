@@ -262,6 +262,8 @@ Version 0.5: add the failed() and error() methods
 
 Version 0.6: bugfix backrefs for which no string is captured
 
+Version 1.0: stable version compatible with Varnish 4.0, maintained on
+             branch 4.0, before beginning upgrades for 4.1
 
 LIMITATIONS
 ===========
